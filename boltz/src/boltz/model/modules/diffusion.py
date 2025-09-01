@@ -454,7 +454,7 @@ class AtomDiffusion(Module):
         **network_condition_kwargs,
     ):
         num_sampling_steps = default(num_sampling_steps, self.num_sampling_steps)
-    
+
         atom_mask = atom_mask.repeat_interleave(multiplicity, 0)
 
         shape = (*atom_mask.shape, 3)

@@ -142,14 +142,18 @@ class PredictionDataset(torch.utils.data.Dataset):
         try:
             input_data = load_input(record, self.target_dir, self.msa_dir)
         except Exception as e:  # noqa: BLE001
-            print(f"Failed to load input for {record.id} with error {e}. Skipping.")  # noqa: T201
+            print(
+                f"Failed to load input for {record.id} with error {e}. Skipping."
+            )  # noqa: T201
             return self.__getitem__(0)
 
         # Tokenize structure
         try:
             tokenized = self.tokenizer.tokenize(input_data)
         except Exception as e:  # noqa: BLE001
-            print(f"Tokenizer failed on {record.id} with error {e}. Skipping.")  # noqa: T201
+            print(
+                f"Tokenizer failed on {record.id} with error {e}. Skipping."
+            )  # noqa: T201
             return self.__getitem__(0)
 
         # Inference specific options
@@ -174,7 +178,9 @@ class PredictionDataset(torch.utils.data.Dataset):
                 inference_pocket=pocket,
             )
         except Exception as e:  # noqa: BLE001
-            print(f"Featurizer failed on {record.id} with error {e}. Skipping.")  # noqa: T201
+            print(
+                f"Featurizer failed on {record.id} with error {e}. Skipping."
+            )  # noqa: T201
             return self.__getitem__(0)
 
         features["record"] = record

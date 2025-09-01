@@ -16,6 +16,7 @@ from boltz.model.modules.trunk import (
 )
 from boltz.model.modules.utils import LinearNoBias
 
+
 class ConfidenceModule(nn.Module):
     """Confidence module."""
 
@@ -206,9 +207,11 @@ class ConfidenceModule(nn.Module):
                         feats,
                         pred_distogram_logits,
                         multiplicity=1,
-                        s_diffusion=s_diffusion[sample_idx : sample_idx + 1]
-                        if s_diffusion is not None
-                        else None,
+                        s_diffusion=(
+                            s_diffusion[sample_idx : sample_idx + 1]
+                            if s_diffusion is not None
+                            else None
+                        ),
                         run_sequentially=False,
                     )
                 )
@@ -230,7 +233,7 @@ class ConfidenceModule(nn.Module):
                     out_dict[key] = pair_chains_iptm
             return out_dict
         if self.imitate_trunk:
-            
+
             s_inputs = self.input_embedder(feats)
 
             # Initialize the sequence and pairwise embeddings
@@ -249,7 +252,7 @@ class ConfidenceModule(nn.Module):
             z = z_init + self.z_recycle(self.z_norm(z))
 
         else:
-            
+
             s_inputs = self.s_inputs_norm(s_inputs).repeat_interleave(multiplicity, 0)
             if not self.no_update_s:
                 s = self.s_norm(s)
@@ -295,7 +298,6 @@ class ConfidenceModule(nn.Module):
         distogram_ = (d.unsqueeze(-1) > self.boundaries).sum(dim=-1).long()
         distogram = self.dist_bin_pairwise_embed(distogram_)
         z = z + distogram
-
 
         mask = feats["token_pad_mask"].repeat_interleave(multiplicity, 0)
         pair_mask = mask[:, :, None] * mask[:, None, :]

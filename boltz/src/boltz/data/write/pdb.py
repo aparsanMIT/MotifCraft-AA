@@ -8,7 +8,9 @@ from boltz.data.types import Structure
 from boltz.data.write.utils import generate_tags
 
 
-def to_pdb(structure: Structure, plddts: Optional[Tensor] = None) -> str:  # noqa: PLR0915
+def to_pdb(
+    structure: Structure, plddts: Optional[Tensor] = None
+) -> str:  # noqa: PLR0915
     """Write a structure into a PDB file.
 
     Parameters

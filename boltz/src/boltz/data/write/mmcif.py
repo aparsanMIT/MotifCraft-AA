@@ -14,7 +14,9 @@ from boltz.data.types import Structure
 from boltz.data.write.utils import generate_tags
 
 
-def to_mmcif(structure: Structure, plddts: Optional[Tensor] = None) -> str:  # noqa: C901, PLR0915, PLR0912
+def to_mmcif(
+    structure: Structure, plddts: Optional[Tensor] = None
+) -> str:  # noqa: C901, PLR0915, PLR0912
     """Write a structure into an MMCIF file.
 
     Parameters
@@ -64,13 +66,19 @@ def to_mmcif(structure: Structure, plddts: Optional[Tensor] = None) -> str:  # n
 
         if mol_type == const.chain_type_ids["PROTEIN"]:
             alphabet = ihm.LPeptideAlphabet()
-            chem_comp = lambda x: ihm.LPeptideChemComp(id=x, code=x, code_canonical="X")  # noqa: E731
+            chem_comp = lambda x: ihm.LPeptideChemComp(
+                id=x, code=x, code_canonical="X"
+            )  # noqa: E731
         elif mol_type == const.chain_type_ids["DNA"]:
             alphabet = ihm.DNAAlphabet()
-            chem_comp = lambda x: ihm.DNAChemComp(id=x, code=x, code_canonical="N")  # noqa: E731
+            chem_comp = lambda x: ihm.DNAChemComp(
+                id=x, code=x, code_canonical="N"
+            )  # noqa: E731
         elif mol_type == const.chain_type_ids["RNA"]:
             alphabet = ihm.RNAAlphabet()
-            chem_comp = lambda x: ihm.RNAChemComp(id=x, code=x, code_canonical="N")  # noqa: E731
+            chem_comp = lambda x: ihm.RNAChemComp(
+                id=x, code=x, code_canonical="N"
+            )  # noqa: E731
         elif len(sequence) > 1:
             alphabet = {}
             chem_comp = lambda x: ihm.SaccharideChemComp(id=x)  # noqa: E731

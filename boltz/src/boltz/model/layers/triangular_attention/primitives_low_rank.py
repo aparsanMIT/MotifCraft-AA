@@ -24,7 +24,7 @@ from boltz.model.layers.triangular_attention.utils import (
 )
 from boltz.model.layers import initialize
 
-deepspeed_is_installed = False ## add this for pairformer
+deepspeed_is_installed = False  ## add this for pairformer
 # deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 ds4s_is_installed = (
     deepspeed_is_installed
@@ -301,8 +301,8 @@ def _attention_chunked_trainable(
 def attention_core(q, k, v, param):
     pass
 
-class LowRankAttention(nn.Module):
 
+class LowRankAttention(nn.Module):
     """
     Standard multi-head attention using AlphaFold's default layer
     initialization. Allows multiple bias vectors.
@@ -318,7 +318,6 @@ class LowRankAttention(nn.Module):
         q_lora_rank: int,
         kv_lora_rank: int,
         gating: bool = True,
-
     ):
         """
         Args:
@@ -348,9 +347,12 @@ class LowRankAttention(nn.Module):
         # DISCREPANCY: c_hidden is not the per-head channel dimension, as
         # stated in the supplement, but the overall channel dimension.
 
-        self.W_dkv = Linear(self.c_k, self.kv_lora_rank * self.no_heads, bias=False, init="glorot")
-        self.W_dq = Linear(self.c_q, self.q_lora_rank * self.no_heads, bias=False, init="glorot")
-
+        self.W_dkv = Linear(
+            self.c_k, self.kv_lora_rank * self.no_heads, bias=False, init="glorot"
+        )
+        self.W_dq = Linear(
+            self.c_q, self.q_lora_rank * self.no_heads, bias=False, init="glorot"
+        )
 
         self.linear_q = Linear(
             self.q_lora_rank, self.c_hidden * self.no_heads, bias=False, init="glorot"

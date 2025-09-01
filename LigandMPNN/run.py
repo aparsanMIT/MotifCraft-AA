@@ -169,7 +169,7 @@ def main(args) -> None:
             device=device,
             chains=args.parse_these_chains_only,
             parse_all_atoms=args.ligand_mpnn_use_side_chain_context,
-            parse_atoms_with_zero_occupancy=args.parse_atoms_with_zero_occupancy
+            parse_atoms_with_zero_occupancy=args.parse_atoms_with_zero_occupancy,
         )
         # make chain_letter + residue_idx + insertion_code mapping to integers
         R_idx_list = list(protein_dict["R_idx"].cpu().numpy())  # residue indices
@@ -389,7 +389,7 @@ def main(args) -> None:
                     [feature_dict["batch_size"], feature_dict["mask"].shape[1]],
                     device=device,
                 )
-                
+
                 output_dict = model.sample(feature_dict)
 
                 # compute confidence scores
@@ -410,8 +410,9 @@ def main(args) -> None:
                     PDB_residues_active_sites = [
                         encoded_residue_dict_rev[item]
                         for item in range(len(active_sites))
-                        if active_sites[item] == 1]
-                
+                        if active_sites[item] == 1
+                    ]
+
                     print("active sites", list(np.where(active_sites == 1)[0]))
                     print("PDB_residues_active_sites", PDB_residues_active_sites)
                 else:
@@ -595,14 +596,14 @@ if __name__ == "__main__":
         default="./model_params/ligandmpnn_v_32_010_25.pt",
         help="Path to model weights.",
     )
-    
+
     argparser.add_argument(
         "--checkpoint_Cas9_mpnn",
         type=str,
         default="./model_params/Cas9mpnn_v_48_020.pt",
         help="Path to model weights.",
     )
-    
+
     argparser.add_argument(
         "--checkpoint_Luc7_mpnn",
         type=str,

@@ -61,7 +61,13 @@ class ProteinMPNN(torch.nn.Module):
             self.y_context_encoder_layers = torch.nn.ModuleList(
                 [DecLayerJ(hidden_dim, hidden_dim, dropout=dropout) for _ in range(2)]
             )
-        elif self.model_type == "protein_mpnn" or self.model_type == "soluble_mpnn" or self.model_type == "Cas9_mpnn" or self.model_type == "Luc7_mpnn" or self.model_type == "Lyso_mpnn":
+        elif (
+            self.model_type == "protein_mpnn"
+            or self.model_type == "soluble_mpnn"
+            or self.model_type == "Cas9_mpnn"
+            or self.model_type == "Luc7_mpnn"
+            or self.model_type == "Lyso_mpnn"
+        ):
             self.features = ProteinFeatures(
                 node_features, edge_features, top_k=k_neighbors, augment_eps=augment_eps
             )
@@ -154,7 +160,13 @@ class ProteinMPNN(torch.nn.Module):
             h_V_C = self.V_C(h_V_C)
             h_V = h_V + self.V_C_norm(self.dropout(h_V_C))
 
-        elif self.model_type == "protein_mpnn" or self.model_type == "soluble_mpnn" or self.model_type == "Cas9_mpnn" or self.model_type == "Luc7_mpnn" or self.model_type == "Lyso_mpnn":
+        elif (
+            self.model_type == "protein_mpnn"
+            or self.model_type == "soluble_mpnn"
+            or self.model_type == "Cas9_mpnn"
+            or self.model_type == "Luc7_mpnn"
+            or self.model_type == "Lyso_mpnn"
+        ):
             E, E_idx = self.features(feature_dict)
             h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), device=device)
             h_E = self.W_e(E)
@@ -177,8 +189,6 @@ class ProteinMPNN(torch.nn.Module):
                 h_V, h_E = layer(h_V, h_E, E_idx, mask, mask_attend)
 
         return h_V, h_E, E_idx
-    
-
 
     def encode_given_E_idx(self, feature_dict, E_idx):
         # xyz_37 = feature_dict["xyz_37"] #[B,L,37,3] - xyz coordinates for all atoms if needed
@@ -200,7 +210,9 @@ class ProteinMPNN(torch.nn.Module):
         device = S_true.device
 
         if self.model_type == "ligand_mpnn":
-            V, E, E_idx, Y_nodes, Y_edges, Y_m = self.features.feature_given_E_idx(feature_dict, E_idx)
+            V, E, E_idx, Y_nodes, Y_edges, Y_m = self.features.feature_given_E_idx(
+                feature_dict, E_idx
+            )
             h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), device=device)
             h_E = self.W_e(E)
             h_E_context = self.W_v(V)
@@ -225,8 +237,14 @@ class ProteinMPNN(torch.nn.Module):
 
             h_V_C = self.V_C(h_V_C)
             h_V = h_V + self.V_C_norm(self.dropout(h_V_C))
-            
-        elif self.model_type == "protein_mpnn" or self.model_type == "soluble_mpnn" or self.model_type == "Cas9_mpnn" or self.model_type == "Luc7_mpnn" or self.model_type == "Lyso_mpnn":
+
+        elif (
+            self.model_type == "protein_mpnn"
+            or self.model_type == "soluble_mpnn"
+            or self.model_type == "Cas9_mpnn"
+            or self.model_type == "Luc7_mpnn"
+            or self.model_type == "Lyso_mpnn"
+        ):
             E, E_idx = self.features.feature_given_E_idx(feature_dict, E_idx)
             h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), device=device)
             h_E = self.W_e(E)
@@ -249,8 +267,6 @@ class ProteinMPNN(torch.nn.Module):
                 h_V, h_E = layer(h_V, h_E, E_idx, mask, mask_attend)
 
         return h_V, h_E, E_idx
-
-
 
     def get_encoder_output(self, feature_dict, E_idx, return_E_idx=False):
         # xyz_37 = feature_dict["xyz_37"] #[B,L,37,3] - xyz coordinates for all atoms if needed
@@ -433,7 +449,6 @@ class ProteinMPNN(torch.nn.Module):
                 )[:, 0]
                 logits = self.W_out(h_V_t)  # [B,21]
                 log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # [B,21]
-        
 
                 probs = torch.nn.functional.softmax(
                     (logits + bias_t) / temperature, dim=-1
@@ -493,7 +508,11 @@ class ProteinMPNN(torch.nn.Module):
 
             decoding_order = torch.tensor(
                 list(itertools.chain(*new_decoding_order)), device=device
-            )[None,].repeat(B, 1)
+            )[
+                None,
+            ].repeat(
+                B, 1
+            )
 
             permutation_matrix_reverse = torch.nn.functional.one_hot(
                 decoding_order, num_classes=L
@@ -568,7 +587,7 @@ class ProteinMPNN(torch.nn.Module):
                     log_probs = torch.nn.functional.log_softmax(
                         logits, dim=-1
                     )  # [B,21]
-                
+
                     all_log_probs[:, t] = (
                         chain_mask_t[:, None] * log_probs
                     ).float()  # [B,21]
@@ -602,7 +621,6 @@ class ProteinMPNN(torch.nn.Module):
                 "decoding_order": decoding_order.repeat(B_decoder, 1),
             }
         return output_dict
-
 
     def sample(self, feature_dict):
         # xyz_37 = feature_dict["xyz_37"] #[B,L,37,3] - xyz coordinates for all atoms if needed
@@ -744,7 +762,6 @@ class ProteinMPNN(torch.nn.Module):
                 )[:, 0]
                 logits = self.W_out(h_V_t)  # [B,21]
                 log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # [B,21]
-        
 
                 probs = torch.nn.functional.softmax(
                     (logits + bias_t) / temperature, dim=-1
@@ -804,7 +821,11 @@ class ProteinMPNN(torch.nn.Module):
 
             decoding_order = torch.tensor(
                 list(itertools.chain(*new_decoding_order)), device=device
-            )[None,].repeat(B, 1)
+            )[
+                None,
+            ].repeat(
+                B, 1
+            )
 
             permutation_matrix_reverse = torch.nn.functional.one_hot(
                 decoding_order, num_classes=L
@@ -879,7 +900,7 @@ class ProteinMPNN(torch.nn.Module):
                     log_probs = torch.nn.functional.log_softmax(
                         logits, dim=-1
                     )  # [B,21]
-                
+
                     all_log_probs[:, t] = (
                         chain_mask_t[:, None] * log_probs
                     ).float()  # [B,21]
@@ -920,18 +941,10 @@ class ProteinMPNN(torch.nn.Module):
         use_sequence - False using backbone info only
         """
         B_decoder = feature_dict["batch_size"]
-        S_true_enc = feature_dict[
-            "S"
-        ]
-        mask_enc = feature_dict[
-            "mask"
-        ]
-        chain_mask_enc = feature_dict[
-            "chain_mask"
-        ]
-        randn = feature_dict[
-            "randn"
-        ]
+        S_true_enc = feature_dict["S"]
+        mask_enc = feature_dict["mask"]
+        chain_mask_enc = feature_dict["chain_mask"]
+        randn = feature_dict["randn"]
         B, L = S_true_enc.shape
         device = S_true_enc.device
 
@@ -947,10 +960,10 @@ class ProteinMPNN(torch.nn.Module):
             S_true = torch.clone(S_true_enc)
             if not use_sequence:
                 order_mask = torch.zeros(chain_mask_enc.shape[1], device=device).float()
-                order_mask[idx] = 1.
+                order_mask[idx] = 1.0
             else:
                 order_mask = torch.ones(chain_mask_enc.shape[1], device=device).float()
-                order_mask[idx] = 0.
+                order_mask[idx] = 0.0
             decoding_order = torch.argsort(
                 (order_mask + 0.0001) * (torch.abs(randn))
             )  # [numbers will be smaller for places where chain_M = 0.0 and higher for places where chain_M = 1.0]
@@ -968,7 +981,7 @@ class ProteinMPNN(torch.nn.Module):
             mask_1D = mask.view([B, L, 1, 1])
             mask_bw = mask_1D * mask_attend
             mask_fw = mask_1D * (1.0 - mask_attend)
-            
+
             # print("mask_fw", mask_fw.squeeze(-1), "mask_bw", mask_bw.squeeze(-1))
             # print("mask_fw", torch.sum(mask_fw.squeeze(-1), dim=-1), "mask_bw", torch.sum(mask_bw.squeeze(-1), dim=-1))
             S_true = S_true.repeat(B_decoder, 1)
@@ -992,10 +1005,10 @@ class ProteinMPNN(torch.nn.Module):
 
             logits = self.W_out(h_V)
             log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-            
-            log_probs_out[:,idx,:] = log_probs[:,idx,:]
-            logits_out[:,idx,:] = logits[:,idx,:]
-            decoding_order_out[:,idx,:] = decoding_order
+
+            log_probs_out[:, idx, :] = log_probs[:, idx, :]
+            logits_out[:, idx, :] = logits[:, idx, :]
+            decoding_order_out[:, idx, :] = decoding_order
 
         output_dict = {
             "S": S_true,
@@ -1005,24 +1018,13 @@ class ProteinMPNN(torch.nn.Module):
         }
         return output_dict
 
-
     def score(self, feature_dict, use_sequence: bool):
         B_decoder = feature_dict["batch_size"]
-        S_true = feature_dict[
-            "S"
-        ]
-        mask = feature_dict[
-            "mask"
-        ]
-        chain_mask = feature_dict[
-            "chain_mask"
-        ]
-        randn = feature_dict[
-            "randn"
-        ]
-        symmetry_list_of_lists = feature_dict[
-            "symmetry_residues"
-        ]
+        S_true = feature_dict["S"]
+        mask = feature_dict["mask"]
+        chain_mask = feature_dict["chain_mask"]
+        randn = feature_dict["randn"]
+        symmetry_list_of_lists = feature_dict["symmetry_residues"]
         B, L = S_true.shape
         device = S_true.device
 
@@ -1059,7 +1061,11 @@ class ProteinMPNN(torch.nn.Module):
 
             decoding_order = torch.tensor(
                 list(itertools.chain(*new_decoding_order)), device=device
-            )[None,].repeat(B, 1)
+            )[
+                None,
+            ].repeat(
+                B, 1
+            )
 
             permutation_matrix_reverse = torch.nn.functional.one_hot(
                 decoding_order, num_classes=L
@@ -1095,7 +1101,7 @@ class ProteinMPNN(torch.nn.Module):
         h_EXV_encoder_fw = mask_fw * h_EXV_encoder
         if not use_sequence:
             for layer in self.decoder_layers:
-                h_V = layer(h_V, h_EXV_encoder_fw, mask)          
+                h_V = layer(h_V, h_EXV_encoder_fw, mask)
         else:
             for layer in self.decoder_layers:
                 # Masked positions attend to encoder information, unmasked see.
@@ -1114,25 +1120,13 @@ class ProteinMPNN(torch.nn.Module):
         }
         return output_dict
 
-    
-    
     def conditional_score(self, feature_dict, use_sequence: bool):
         B_decoder = feature_dict["batch_size"]
-        S_true = feature_dict[
-            "S"
-        ]
-        mask = feature_dict[
-            "mask"
-        ]
-        chain_mask = feature_dict[
-            "chain_mask"
-        ]
-        randn = feature_dict[
-            "randn"
-        ]
-        symmetry_list_of_lists = feature_dict[
-            "symmetry_residues"
-        ]
+        S_true = feature_dict["S"]
+        mask = feature_dict["mask"]
+        chain_mask = feature_dict["chain_mask"]
+        randn = feature_dict["randn"]
+        symmetry_list_of_lists = feature_dict["symmetry_residues"]
         B, L = S_true.shape
         device = S_true.device
 
@@ -1154,7 +1148,7 @@ class ProteinMPNN(torch.nn.Module):
                 permutation_matrix_reverse,
             )
             order_mask_backward = torch.ones_like(order_mask_backward)
-            
+
             mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
             mask_1D = mask.view([B, L, 1, 1])
             mask_bw = mask_1D * mask_attend
@@ -1171,7 +1165,11 @@ class ProteinMPNN(torch.nn.Module):
 
             decoding_order = torch.tensor(
                 list(itertools.chain(*new_decoding_order)), device=device
-            )[None,].repeat(B, 1)
+            )[
+                None,
+            ].repeat(
+                B, 1
+            )
 
             permutation_matrix_reverse = torch.nn.functional.one_hot(
                 decoding_order, num_classes=L
@@ -1183,7 +1181,7 @@ class ProteinMPNN(torch.nn.Module):
                 permutation_matrix_reverse,
             )
             order_mask_backward = torch.ones_like(order_mask_backward)
-            
+
             mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
             mask_1D = mask.view([B, L, 1, 1])
             mask_bw = mask_1D * mask_attend
@@ -1209,7 +1207,7 @@ class ProteinMPNN(torch.nn.Module):
         h_EXV_encoder_fw = mask_fw * h_EXV_encoder
         if not use_sequence:
             for layer in self.decoder_layers:
-                h_V = layer(h_V, h_EXV_encoder_fw, mask)          
+                h_V = layer(h_V, h_EXV_encoder_fw, mask)
         else:
             for layer in self.decoder_layers:
                 # Masked positions attend to encoder information, unmasked see.
@@ -1227,26 +1225,14 @@ class ProteinMPNN(torch.nn.Module):
             "decoding_order": decoding_order,
         }
         return output_dict
-    
-    
-    
+
     def unconditional_score(self, feature_dict, use_sequence: bool):
         B_decoder = feature_dict["batch_size"]
-        S_true = feature_dict[
-            "S"
-        ]
-        mask = feature_dict[
-            "mask"
-        ]
-        chain_mask = feature_dict[
-            "chain_mask"
-        ]
-        randn = feature_dict[
-            "randn"
-        ]
-        symmetry_list_of_lists = feature_dict[
-            "symmetry_residues"
-        ]
+        S_true = feature_dict["S"]
+        mask = feature_dict["mask"]
+        chain_mask = feature_dict["chain_mask"]
+        randn = feature_dict["randn"]
+        symmetry_list_of_lists = feature_dict["symmetry_residues"]
         B, L = S_true.shape
         device = S_true.device
 
@@ -1268,7 +1254,7 @@ class ProteinMPNN(torch.nn.Module):
                 permutation_matrix_reverse,
             )
             order_mask_backward = torch.zeros_like(order_mask_backward)
-            
+
             mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
             mask_1D = mask.view([B, L, 1, 1])
             mask_bw = mask_1D * mask_attend
@@ -1285,7 +1271,11 @@ class ProteinMPNN(torch.nn.Module):
 
             decoding_order = torch.tensor(
                 list(itertools.chain(*new_decoding_order)), device=device
-            )[None,].repeat(B, 1)
+            )[
+                None,
+            ].repeat(
+                B, 1
+            )
 
             permutation_matrix_reverse = torch.nn.functional.one_hot(
                 decoding_order, num_classes=L
@@ -1297,7 +1287,7 @@ class ProteinMPNN(torch.nn.Module):
                 permutation_matrix_reverse,
             )
             order_mask_backward = torch.zeros_like(order_mask_backward)
-            
+
             mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
             mask_1D = mask.view([B, L, 1, 1])
             mask_bw = mask_1D * mask_attend
@@ -1323,7 +1313,7 @@ class ProteinMPNN(torch.nn.Module):
         h_EXV_encoder_fw = mask_fw * h_EXV_encoder
         if not use_sequence:
             for layer in self.decoder_layers:
-                h_V = layer(h_V, h_EXV_encoder_fw, mask)          
+                h_V = layer(h_V, h_EXV_encoder_fw, mask)
         else:
             for layer in self.decoder_layers:
                 # Masked positions attend to encoder information, unmasked see.
@@ -1341,6 +1331,7 @@ class ProteinMPNN(torch.nn.Module):
             "decoding_order": decoding_order,
         }
         return output_dict
+
 
 class ProteinFeaturesLigand(torch.nn.Module):
     def __init__(
@@ -1852,7 +1843,7 @@ class ProteinFeaturesLigand(torch.nn.Module):
         ]  # [B,L,K]
         RBF_A_B = self._rbf(D_A_B_neighbors)
         return RBF_A_B
-    
+
     def feature_given_E_idx(self, input_features, E_idx):
         Y = input_features["Y"]
         Y_m = input_features["Y_m"]
@@ -2003,7 +1994,6 @@ class ProteinFeaturesLigand(torch.nn.Module):
         Y_nodes = self.norm_y_nodes(Y_nodes)
 
         return V, E, E_idx, Y_nodes, Y_edges, Y_m
-
 
     def forward(self, input_features):
         Y = input_features["Y"]

@@ -88,59 +88,69 @@ class RelativePositionEncoder(Module):
         )
 
         if self.cyclic:
+
             def get_cyclic_offset(L):
-                '''Calculate cyclic offset matrix for length L
+                """Calculate cyclic offset matrix for length L
                 Args:
                     L (int): Length of sequence
                     offset_type (int): Type of offset calculation (1, 2, or 3)
                 Returns:
                     torch.Tensor: LxL matrix of cyclic offsets
-                '''
+                """
                 i = torch.arange(L)
-                ij = torch.stack([i, i+L], -1)
-                offset = i[:,None] - i[None,:]
+                ij = torch.stack([i, i + L], -1)
+                offset = i[:, None] - i[None, :]
                 # Fix min() call by doing dimensions one at a time
-                c_offset = torch.abs(ij[:,None,:,None] - ij[None,:,None,:])
+                c_offset = torch.abs(ij[:, None, :, None] - ij[None, :, None, :])
                 c_offset = c_offset.min(dim=2)[0]
                 c_offset = c_offset.min(dim=2)[0]
                 a = c_offset < torch.abs(offset)
                 c_offset[a] = -c_offset[a]
                 return c_offset * torch.sign(offset)
 
-            entity1_mask = feats['entity_id'][0] == 1
-            entity1_residues = feats['residue_index'][0][entity1_mask]
+            entity1_mask = feats["entity_id"][0] == 1
+            entity1_residues = feats["residue_index"][0][entity1_mask]
             N = len(entity1_residues)
             unique_residues = torch.unique(entity1_residues)
             L = len(unique_residues)
 
             cyclic_offset_unique = get_cyclic_offset(L).to(entity1_residues.device)
             cyclic_offset_full = torch.zeros((N, N), device=entity1_residues.device)
-            position_to_group = {int(val): idx for idx, val in enumerate(unique_residues)}
-            group_indices = torch.tensor([position_to_group[int(pos)] for pos in entity1_residues], 
-                                    device=entity1_residues.device, dtype=torch.long)
-            idx_i = group_indices[:,None].expand(N,N)
-            idx_j = group_indices[None,:].expand(N,N)
+            position_to_group = {
+                int(val): idx for idx, val in enumerate(unique_residues)
+            }
+            group_indices = torch.tensor(
+                [position_to_group[int(pos)] for pos in entity1_residues],
+                device=entity1_residues.device,
+                dtype=torch.long,
+            )
+            idx_i = group_indices[:, None].expand(N, N)
+            idx_j = group_indices[None, :].expand(N, N)
             cyclic_offset_full = cyclic_offset_unique[idx_i, idx_j]
-            cyclic_offset_full = (32 + cyclic_offset_full.to(torch.long))
-            padded_cyclic_offset = torch.zeros((feats['residue_index'].shape[1], feats['residue_index'].shape[1]), 
-                                            device=cyclic_offset_full.device, dtype=torch.long)
+            cyclic_offset_full = 32 + cyclic_offset_full.to(torch.long)
+            padded_cyclic_offset = torch.zeros(
+                (feats["residue_index"].shape[1], feats["residue_index"].shape[1]),
+                device=cyclic_offset_full.device,
+                dtype=torch.long,
+            )
             entity1_indices = torch.where(entity1_mask)[0]
-            padded_cyclic_offset[entity1_indices[:,None], entity1_indices] = cyclic_offset_full
+            padded_cyclic_offset[entity1_indices[:, None], entity1_indices] = (
+                cyclic_offset_full
+            )
 
             a_rel_pos = one_hot(d_residue, 2 * self.r_max + 2)
-            X_a=torch.argmax(a_rel_pos[0],dim=-1)[:86, :86]
-            a_rel_pos_cyclic = one_hot(padded_cyclic_offset.unsqueeze(0), 2 * self.r_max + 2)
-            
-            chain_mask = (feats["entity_id"]==1)
-            chain_mask_2d = chain_mask.unsqueeze(1) & chain_mask.unsqueeze(2)
-            
-            a_rel_pos = torch.where(
-                chain_mask_2d.unsqueeze(-1),
-                a_rel_pos_cyclic,
-                a_rel_pos
+            X_a = torch.argmax(a_rel_pos[0], dim=-1)[:86, :86]
+            a_rel_pos_cyclic = one_hot(
+                padded_cyclic_offset.unsqueeze(0), 2 * self.r_max + 2
             )
-            X_b=torch.argmax(a_rel_pos[0],dim=-1)[:86, :86]
-            
+
+            chain_mask = feats["entity_id"] == 1
+            chain_mask_2d = chain_mask.unsqueeze(1) & chain_mask.unsqueeze(2)
+
+            a_rel_pos = torch.where(
+                chain_mask_2d.unsqueeze(-1), a_rel_pos_cyclic, a_rel_pos
+            )
+            X_b = torch.argmax(a_rel_pos[0], dim=-1)[:86, :86]
 
         else:
             a_rel_pos = one_hot(d_residue, 2 * self.r_max + 2)

@@ -275,9 +275,13 @@ def process_inputs(  # noqa: C901, PLR0912, PLR0915
 
         manifest: Manifest = Manifest.load(manifest_path)
         input_ids = [d.stem for d in data]
-        existing_records, processed_ids = zip(*[
-            (record, record.id) for record in manifest.records if record.id in input_ids
-        ])
+        existing_records, processed_ids = zip(
+            *[
+                (record, record.id)
+                for record in manifest.records
+                if record.id in input_ids
+            ]
+        )
 
         if isinstance(existing_records, tuple):
             existing_records = list(existing_records)
@@ -311,7 +315,7 @@ def process_inputs(  # noqa: C901, PLR0912, PLR0915
     # Load CCD
     with ccd_path.open("rb") as file:
         ccd = pickle.load(file)  # noqa: S301
-    
+
     if existing_records is not None:
         click.echo(f"Found {len(existing_records)} records. Adding them to records")
 
@@ -535,16 +539,12 @@ def cli() -> None:
     help="Pairing strategy to use. Used only if --use_msa_server is set. Options are 'greedy' and 'complete'",
     default="greedy",
 )
-
-
 @click.option(
     "--cyclic",
     type=bool,
     is_flag=True,
     help="Whether to use cyclic predictions. Default is False.",
 )
-
-
 def predict(
     data: str,
     out_dir: str,
@@ -638,7 +638,6 @@ def predict(
         msa_dir=processed_dir / "msa",
     )
 
-
     # Create data module
     data_module = BoltzInferenceDataModule(
         manifest=processed.manifest,
@@ -658,7 +657,7 @@ def predict(
         "write_confidence_summary": True,
         "write_full_pae": write_full_pae,
         "write_full_pde": write_full_pde,
-        "cyclic": cyclic
+        "cyclic": cyclic,
     }
     diffusion_params = BoltzDiffusionParams()
     diffusion_params.step_scale = step_scale
@@ -669,7 +668,7 @@ def predict(
         map_location="cpu",
         diffusion_process_args=asdict(diffusion_params),
         ema=False,
-        cyclic=predict_args["cyclic"]
+        cyclic=predict_args["cyclic"],
     )
     model_module.eval()
 

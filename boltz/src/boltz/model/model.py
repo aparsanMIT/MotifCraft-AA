@@ -36,6 +36,7 @@ from boltz.model.modules.trunk import (
 from boltz.model.modules.utils import ExponentialMovingAverage
 from boltz.model.optim.scheduler import AlphaFoldLRScheduler
 
+
 class Boltz1(LightningModule):
     def __init__(  # noqa: PLR0915, C901, PLR0912
         self,
@@ -168,7 +169,7 @@ class Boltz1(LightningModule):
         self.token_bonds = nn.Linear(1, token_z, bias=False)
         self.s_norm = nn.LayerNorm(token_s)
         self.z_norm = nn.LayerNorm(token_z)
-        
+
         # Recycling projections
         self.s_recycle = nn.Linear(token_s, token_s, bias=False)
         self.z_recycle = nn.Linear(token_z, token_z, bias=False)
@@ -196,8 +197,11 @@ class Boltz1(LightningModule):
             )
         # Output modules
 
-    
-        use_accumulate_token_repr = confidence_prediction and "use_s_diffusion" in confidence_model_args and confidence_model_args["use_s_diffusion"]
+        use_accumulate_token_repr = (
+            confidence_prediction
+            and "use_s_diffusion" in confidence_model_args
+            and confidence_model_args["use_s_diffusion"]
+        )
         self.structure_module = AtomDiffusion(
             score_model_args={
                 "token_z": token_z,
@@ -244,20 +248,16 @@ class Boltz1(LightningModule):
                     self.confidence_module, dynamic=False, fullgraph=False
                 )
 
-
-
         if not structure_prediction_training:
             for name, param in self.named_parameters():
                 if name.split(".")[0] != "confidence_module":
                     param.requires_grad = False
-
 
     def get_distogram(
         self,
         feats: dict[str, Tensor],
     ) -> dict[str, Tensor]:
         dict_out = {}
-
 
         with torch.set_grad_enabled(True):
             s_inputs = self.input_embedder(feats)
@@ -278,7 +278,7 @@ class Boltz1(LightningModule):
             # Compute pairwise mask
             mask = feats["token_pad_mask"].float()
             pair_mask = mask[:, :, None] * mask[:, None, :]
-            
+
             for i in range(self.predict_args["recycling_steps"] + 1):
                 with torch.set_grad_enabled(True):
                     # Fixes an issue with unused parameters in autocast
@@ -299,7 +299,9 @@ class Boltz1(LightningModule):
 
                     # Revert to uncompiled version for validation
                     if self.is_pairformer_compiled and not self.training:
-                        pairformer_module = self.pairformer_module._orig_mod  # noqa: SLF001
+                        pairformer_module = (
+                            self.pairformer_module._orig_mod
+                        )  # noqa: SLF001
                     else:
                         pairformer_module = self.pairformer_module
 
@@ -324,7 +326,7 @@ class Boltz1(LightningModule):
         dict_out = {}
 
         # Compute input embeddings
-        with torch.set_grad_enabled(True): 
+        with torch.set_grad_enabled(True):
             s_inputs = self.input_embedder(feats)
 
             # Initialize the sequence and pairwise embeddings
@@ -358,7 +360,9 @@ class Boltz1(LightningModule):
 
                     # Revert to uncompiled version for validation
                     if self.is_pairformer_compiled and not self.training:
-                        pairformer_module = self.pairformer_module._orig_mod  # noqa: SLF001
+                        pairformer_module = (
+                            self.pairformer_module._orig_mod
+                        )  # noqa: SLF001
                     else:
                         pairformer_module = self.pairformer_module
 
@@ -367,7 +371,6 @@ class Boltz1(LightningModule):
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
 
-    
         structure_out = self.structure_module.sample(
             s_trunk=s,
             z_trunk=z,
@@ -380,13 +383,18 @@ class Boltz1(LightningModule):
             train_accumulate_token_repr=self.training,
         )
         # Detach structure outputs but not the inputs
-        dict_out.update({
-            k: v.detach() if isinstance(v, torch.Tensor) else v 
-            for k, v in structure_out.items()
-        })
+        dict_out.update(
+            {
+                k: v.detach() if isinstance(v, torch.Tensor) else v
+                for k, v in structure_out.items()
+            }
+        )
 
         if disconnect_feats:
-            feats_ = {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in feats.items()}
+            feats_ = {
+                k: v.detach() if isinstance(v, torch.Tensor) else v
+                for k, v in feats.items()
+            }
         else:
             feats_ = feats
 
@@ -420,10 +428,10 @@ class Boltz1(LightningModule):
                     run_sequentially=run_confidence_sequentially,
                 )
             )
-            
+
         if self.confidence_prediction and self.confidence_module.use_s_diffusion:
             dict_out.pop("diff_token_repr", None)
-            
+
         return dict_out
 
     def forward(
@@ -441,8 +449,7 @@ class Boltz1(LightningModule):
         with torch.set_grad_enabled(
             self.training and self.structure_prediction_training
         ):
-            
-        
+
             s_inputs = self.input_embedder(feats)
 
             # Initialize the sequence and pairwise embeddings
@@ -483,7 +490,9 @@ class Boltz1(LightningModule):
 
                     # Revert to uncompiled version for validation
                     if self.is_pairformer_compiled and not self.training:
-                        pairformer_module = self.pairformer_module._orig_mod  # noqa: SLF001
+                        pairformer_module = (
+                            self.pairformer_module._orig_mod
+                        )  # noqa: SLF001
                     else:
                         pairformer_module = self.pairformer_module
 
@@ -542,7 +551,6 @@ class Boltz1(LightningModule):
             dict_out.pop("diff_token_repr", None)
 
         return dict_out
-
 
     def get_true_coordinates(
         self,
@@ -1309,8 +1317,14 @@ class Boltz1(LightningModule):
             pred_dict["coords"] = out["sample_atom_coords"]
             if self.predict_args.get("write_confidence_summary", True):
                 pred_dict["confidence_score"] = (
-                    4 * out["complex_plddt"] +
-                    (out["iptm"] if not torch.allclose(out["iptm"], torch.zeros_like(out["iptm"])) else out["ptm"])
+                    4 * out["complex_plddt"]
+                    + (
+                        out["iptm"]
+                        if not torch.allclose(
+                            out["iptm"], torch.zeros_like(out["iptm"])
+                        )
+                        else out["ptm"]
+                    )
                 ) / 5
                 for key in [
                     "ptm",
@@ -1383,7 +1397,9 @@ class Boltz1(LightningModule):
                 self.ema.load_state_dict(checkpoint["ema"], device=torch.device("cpu"))
             else:
                 self.ema = None
-                print("Warning: EMA state not loaded due to incompatible model parameters.")
+                print(
+                    "Warning: EMA state not loaded due to incompatible model parameters."
+                )
 
     def on_train_start(self):
         if self.use_ema and self.ema is None:

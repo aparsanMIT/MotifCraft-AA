@@ -24,7 +24,7 @@ from boltz.model.layers.triangular_attention.utils import (
 )
 from boltz.model.layers import initialize
 
-deepspeed_is_installed = False ## add this for pairformer
+deepspeed_is_installed = False  ## add this for pairformer
 # deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 ds4s_is_installed = (
     deepspeed_is_installed

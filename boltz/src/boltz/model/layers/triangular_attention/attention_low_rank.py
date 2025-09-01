@@ -29,8 +29,18 @@ from boltz.model.layers.triangular_attention.utils import (
     permute_final_dims,
 )
 
+
 class TriangleAttention(nn.Module):
-    def __init__(self, c_in, c_hidden, no_heads,  q_lora_rank, kv_lora_rank, starting=True, inf=1e9):
+    def __init__(
+        self,
+        c_in,
+        c_hidden,
+        no_heads,
+        q_lora_rank,
+        kv_lora_rank,
+        starting=True,
+        inf=1e9,
+    ):
         """
         Args:
             c_in:
@@ -54,7 +64,6 @@ class TriangleAttention(nn.Module):
         self.starting = starting
         self.inf = inf
 
-
         self.layer_norm = LayerNorm(self.c_in)
         self.linear = Linear(c_in, self.no_heads, bias=False, init="normal")
 
@@ -65,8 +74,8 @@ class TriangleAttention(nn.Module):
             c_v=c_in,
             c_hidden=c_hidden,
             no_heads=no_heads,
-            q_lora_rank = q_lora_rank,
-            kv_lora_rank = kv_lora_rank,
+            q_lora_rank=q_lora_rank,
+            kv_lora_rank=kv_lora_rank,
         )
 
     @torch.jit.ignore
