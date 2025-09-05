@@ -432,10 +432,13 @@ boltz_model = Boltz1.load_from_checkpoint(
     no_atom_encoder=False,
 ).eval().requires_grad_(False)
 
-motif = get_motif(f'motifs/{args.motif}.pdb')
-
 out_dir = os.path.join(args.outpath, args.motif)
 os.makedirs(out_dir, exist_ok=True)
+
+motif = get_motif(f'motifs/{args.motif}.pdb')
+
+with open(os.path.join(out_dir,f"{args.motif}.pkl"), "wb") as f:
+    pickle.dump(motif, f)
 
 for trial in range(args.num_designs):
     
