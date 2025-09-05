@@ -16,8 +16,9 @@ def motifRMSD(motif_pdb, design_pdb, motif_mask):
     
     return compute_rmsd(design_motif_ca, true_motif_ca)
     
-    
-design_dir = "./out/onemotif_twostates/3ixt/design1/"
-with open(os.path.join(design_dir,"3ixt_spec.pkl"), "rb") as f:
+motif = "3ixt"
+design_dir =f"./out/onemotif_twostates/{motif}/design3/"
+with open(os.path.join(design_dir,f"{motif}_spec.pkl"), "rb") as f:
     motif_mask = pickle.load(f)["motif_mask"]
-print(motifRMSD("/data/cb/mihirb14/projects/BoltzDesign1/motifs/3ixt.pdb",os.path.join(design_dir,"state1.pdb"),motif_mask))
+print("mRMSD: state 0", motifRMSD(f"/data/cb/mihirb14/projects/BoltzDesign1/motifs/{motif}.pdb",os.path.join(design_dir,"state0.pdb"),motif_mask))
+print("mRMSD: state 1",motifRMSD(f"/data/cb/mihirb14/projects/BoltzDesign1/motifs/{motif}.pdb",os.path.join(design_dir,"state1.pdb"),motif_mask))
