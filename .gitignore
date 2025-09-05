@@ -5,3 +5,5 @@ inputs
 outputs
 *.cif
 .boltz
+out/
+setup_mihir.sh

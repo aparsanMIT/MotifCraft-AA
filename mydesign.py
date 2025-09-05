@@ -37,18 +37,18 @@ import logging
 from mydesign_utils import *
 import residue_constants
 
-with open(os.path.expanduser("~/.boltz/ccd.pkl"), "rb") as f:
+import os
+
+with open(os.path.expanduser(os.path.join(os.environ['HOME'],".boltz/ccd.pkl")), "rb") as f:
     ccd_lib = pickle.load(f)
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--len', type=int, default=100)
-parser.add_argument(
-    '--smiles', 
-    type=str,
-    default=None
-)
-parser.add_argument('--motif', type=str, default=None)
+# parser.add_argument('--len', type=int, default=100)
+# parser.add_argument('--smiles', type=str,default=None)
+parser.add_argument('--num_designs',type= int, default = 1)
+parser.add_argument('--motif', type=str, default="3ixt")
+parser.add_argument('-o','--outpath', type=str, default = "./out/")
 args = parser.parse_args()
 
 #############
@@ -128,8 +128,8 @@ class MultistateDesigner:
     def __init__(self, num_states):
         self.motifs = [None]*num_states
         self.ligands = [None]*num_states
-
         self.anti_motifs = [None]*num_states
+        
     def add_motif(self, motif, state):
         self.motifs[state] = motif
 
@@ -367,8 +367,8 @@ class MultistateDesigner:
         
             self.logits -= opt["lr_rate"] * self.logits.grad
         self.logits.grad = None
-    def optimize(self, boltz_model):
         
+    def optimize(self, boltz_model):
         for opt in Annealer(hard=0, e_hard=0, iters=30, lr=0.2):
             self.do_iter(boltz_model, opt, pre_run=True)
 
@@ -410,9 +410,6 @@ class MultistateDesigner:
         ):
             self.do_iter(boltz_model, opt)
 
-        
-    
-
 predict_args={
     "recycling_steps": 0,
     "sampling_steps": 200,
@@ -424,7 +421,7 @@ predict_args={
 diffusion_params = BoltzDiffusionParams()
 diffusion_params.step_scale = 1.638  # Default value
 boltz_model = Boltz1.load_from_checkpoint(
-    "~/.boltz/boltz1_conf.ckpt",
+    os.path.join(os.environ['HOME'],".boltz/boltz1_conf.ckpt"),
     strict=False,
     predict_args=predict_args,
     map_location=device,
@@ -435,19 +432,36 @@ boltz_model = Boltz1.load_from_checkpoint(
     no_atom_encoder=False,
 ).eval().requires_grad_(False)
 
-motif = get_motif('motifs/3ixt.pdb')
-designer = MultistateDesigner(num_states=2)
-designer.add_motif(motif, state=0)
-designer.add_anti_motif(motif, state=1)
-designer.add_ligand('Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C', state=1)
-designer.initialize(length=len(motif['motif_mask']))
-designer.optimize(boltz_model)
+motif = get_motif(f'motifs/{args.motif}.pdb')
 
-structs = designer.get_final_structs(boltz_model)
-for i, (out_dict, struct) in enumerate(structs):
-    print(out_dict)
-    with open(f'out{i}.pdb', 'w') as f:
-        f.write(to_pdb(struct))
-    with open(f'out{i}.cif', 'w') as f:
-        f.write(to_mmcif(struct))
+out_dir = os.path.join(args.outpath, args.motif)
+os.makedirs(out_dir, exist_ok=True)
+
+for trial in range(args.num_designs):
+    
+    designer = MultistateDesigner(num_states=2)
+    designer.add_motif(motif, state=0)
+    designer.add_anti_motif(motif, state=1)
+    designer.add_ligand('Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C', state=1)
+    designer.initialize(length=len(motif['motif_mask']))
+
+    # breakpoint()
+
+    designer.optimize(boltz_model)
+
+    structs = designer.get_final_structs(boltz_model)
+    
+    design_dir = os.path.join(out_dir, f"design{trial}")
+    os.makedirs(design_dir, exist_ok=True)
+    
+    for i, (out_dict, struct) in enumerate(structs):
+        pdb_path = os.path.join(design_dir, f"state{i}.pdb")
+        cif_path = os.path.join(design_dir, f"state{i}.cif")
+        pkl_path = os.path.join(design_dir, f"state{i}.pkl")
         
+        with open(pdb_path, 'w') as f:
+            f.write(to_pdb(struct))
+        with open(cif_path, 'w') as f:
+            f.write(to_mmcif(struct))
+        with open(pkl_path, "wb") as f:
+            pickle.dump(out_dict, f)
