@@ -33,8 +33,8 @@ import csv
 import gc
 import json
 import logging
-
-from mydesign_utils import *
+from utils import protein
+from utils.mydesign_utils import *
 import residue_constants
 
 import os
@@ -59,12 +59,11 @@ device = "cuda"
 #torch.autograd.set_detect_anomaly(True)
 
 def get_motif(path):
-    from motif_utils import load_motif_spec, sample_motif_mask
+    from utils.motif_utils import load_motif_spec, sample_motif_mask
     spec = load_motif_spec(path)
     masks = sample_motif_mask(spec)
     motif_mask = masks['sequence']
     motif_idx = masks['group']
-    import protein
     with open(path) as f:
         prot = protein.from_pdb_string(f.read())
     
@@ -198,7 +197,7 @@ class MultistateDesigner:
             predict_args["recycling_steps"] = 3
             
             output = run_model(boltz_model, new_batch, predict_args)
-            breakpoint()
+            # breakpoint()
             new_struct.atoms['coords'] = output['coords'][0,:len(new_struct.atoms)].cpu().numpy()
             out.append((output, new_struct))
         return out
@@ -435,12 +434,8 @@ boltz_model = Boltz1.load_from_checkpoint(
 out_dir = os.path.join(args.outpath, args.motif)
 os.makedirs(out_dir, exist_ok=True)
 
-motif = get_motif(f'motifs/{args.motif}.pdb')
-
-with open(os.path.join(out_dir,f"{args.motif}.pkl"), "wb") as f:
-    pickle.dump(motif, f)
-
-for trial in range(args.num_designs):
+for design in range(args.num_designs):
+    motif = get_motif(f'motifs/{args.motif}.pdb')
     
     designer = MultistateDesigner(num_states=2)
     designer.add_motif(motif, state=0)
@@ -448,13 +443,11 @@ for trial in range(args.num_designs):
     designer.add_ligand('Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C', state=1)
     designer.initialize(length=len(motif['motif_mask']))
 
-    # breakpoint()
-
     designer.optimize(boltz_model)
 
     structs = designer.get_final_structs(boltz_model)
     
-    design_dir = os.path.join(out_dir, f"design{trial}")
+    design_dir = os.path.join(out_dir, f"design{design}")
     os.makedirs(design_dir, exist_ok=True)
     
     for i, (out_dict, struct) in enumerate(structs):
@@ -468,3 +461,5 @@ for trial in range(args.num_designs):
             f.write(to_mmcif(struct))
         with open(pkl_path, "wb") as f:
             pickle.dump(out_dict, f)
+        with open(os.path.join(design_dir,f"{args.motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
+            pickle.dump(motif, f)
