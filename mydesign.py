@@ -33,10 +33,10 @@ import csv
 import gc
 import json
 import logging
-from utils import protein
+from utils import protein, residue_constants
 from utils.mydesign_utils import *
-import residue_constants
 
+import time
 import os
 
 with open(os.path.expanduser(os.path.join(os.environ['HOME'],".boltz/ccd.pkl")), "rb") as f:
@@ -450,11 +450,17 @@ for design in range(args.num_designs):
     designer.add_ligand('Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C', state=1)
     designer.initialize(length=len(motif['motif_mask']))
 
+    t0 = time.perf_counter()
     print("Optimizing sequence...")
     designer.optimize(boltz_model)
+    t1 = time.perf_counter()
+    print(f"Optimization done in {t1 - t0:.1f} sec")
 
     print("Saving structures...")
+    t2 = time.perf_counter()
     structs = designer.get_final_structs(boltz_model)
+    t3 = time.perf_counter()
+    print(f"Structure generation took {t3 - t2:.1f} sec")
     
     design_dir = os.path.join(out_dir, f"design{design}")
     os.makedirs(design_dir, exist_ok=True)
@@ -472,3 +478,5 @@ for design in range(args.num_designs):
                 f.write(to_pdb(struct))
             with open(os.path.join(design_dir, base + ".cif"), "w") as f:
                 f.write(to_mmcif(struct))
+                
+    print(f"Finished design {motif} {design+1} in {t3 - t0:.1f} sec total")
