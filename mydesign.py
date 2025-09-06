@@ -189,19 +189,24 @@ class MultistateDesigner:
             "write_full_pae": True,
             "write_full_pde": True,
         }
-        out = []
+        results = []
         for i, ligand in enumerate(self.ligands):
             new_batch, new_struct = get_batch_with_ligand(self.get_seq(), ligand)
-            
-            mid_points = torch.linspace(2, 22, 64).to(device)
-            predict_args["recycling_steps"] = 3
-            
-            output = run_model(boltz_model, new_batch, predict_args)
-            # breakpoint()
-            new_struct.atoms['coords'] = output['coords'][0,:len(new_struct.atoms)].cpu().numpy()
-            out.append((output, new_struct))
-        return out
 
+            output = run_model(boltz_model, new_batch, predict_args)
+            coords_all = output["coords"]
+
+            struct_list = []
+            for j in range(coords_all.shape[0]):
+                struct_copy = copy.deepcopy(new_struct)
+                struct_copy.atoms["coords"] = (
+                    coords_all[j, : len(new_struct.atoms)].cpu().numpy()
+                )
+                struct_list.append(struct_copy)
+
+            results.append((output, struct_list, i))
+            
+        return results
         
     def get_restype_from_logits(self, res_type_logits, opt, alpha=2.0):
         device = res_type_logits.device
@@ -435,6 +440,8 @@ out_dir = os.path.join(args.outpath, args.motif)
 os.makedirs(out_dir, exist_ok=True)
 
 for design in range(args.num_designs):
+    print(f"\nStarting design {design+1}/{args.num_designs} for motif {args.motif}")
+    
     motif = get_motif(f'motifs/{args.motif}.pdb')
     
     designer = MultistateDesigner(num_states=2)
@@ -443,23 +450,25 @@ for design in range(args.num_designs):
     designer.add_ligand('Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C', state=1)
     designer.initialize(length=len(motif['motif_mask']))
 
+    print("Optimizing sequence...")
     designer.optimize(boltz_model)
 
+    print("Saving structures...")
     structs = designer.get_final_structs(boltz_model)
     
     design_dir = os.path.join(out_dir, f"design{design}")
     os.makedirs(design_dir, exist_ok=True)
     
-    for i, (out_dict, struct) in enumerate(structs):
-        pdb_path = os.path.join(design_dir, f"state{i}.pdb")
-        cif_path = os.path.join(design_dir, f"state{i}.cif")
-        pkl_path = os.path.join(design_dir, f"state{i}.pkl")
+    with open(os.path.join(design_dir,f"{args.motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
+        pickle.dump(motif, f)
         
-        with open(pdb_path, 'w') as f:
-            f.write(to_pdb(struct))
-        with open(cif_path, 'w') as f:
-            f.write(to_mmcif(struct))
-        with open(pkl_path, "wb") as f:
-            pickle.dump(out_dict, f)
-        with open(os.path.join(design_dir,f"{args.motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
-            pickle.dump(motif, f)
+    for output, struct_list, state_idx in structs:
+        with open(os.path.join(design_dir, f"state{state_idx}.pkl"), "wb") as f:
+            pickle.dump(output, f)
+
+        for j, struct in enumerate(struct_list):
+            base = f"state{state_idx}_sample{j}"
+            with open(os.path.join(design_dir, base + ".pdb"), "w") as f:
+                f.write(to_pdb(struct))
+            with open(os.path.join(design_dir, base + ".cif"), "w") as f:
+                f.write(to_mmcif(struct))
