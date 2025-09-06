@@ -20,7 +20,7 @@ from typing import Any, Sequence, Mapping, Optional
 import re
 import string
 
-import residue_constants
+from . import residue_constants
 from Bio.PDB import PDBParser
 import numpy as np
 
