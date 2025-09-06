@@ -2,8 +2,11 @@
 # run_motif_designs.sh
 # Usage: ./run_motif_designs.sh
 
-visible_devices_list=(4)   # gpus available on this machine
-motifs=(4jhw)     # motifs to design
+visible_devices_list=(0 1 2 3 4 5 6 7)   # gpus available on thes machine
+# motifs=(1bcf 1prw 1qjg 1ycr 2kl8 3ixt 4jhw 4zyp)
+# motifs=(4zyp 5ius 5tpn 5trv_long 5trv_med 5trv_short 5wn9 5yui)     # motifs to design
+motifs=(6e6r_long 6e6r_med 6e6r_short 6exz_long 6exz_med 6exz_short 7mrx_128 7mrx_60)
+# motifs=(7mrx_85)
 num_designs=100
 outdir=./out/onemotif_twostates
 
