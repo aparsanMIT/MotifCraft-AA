@@ -1,4 +1,4 @@
-from mydesign import MultistateDesigner
+from multistate import MultistateDesigner
 
 # common design tasks
 
