@@ -35,6 +35,8 @@ import json
 import logging
 from utils import protein, residue_constants
 from utils.mydesign_utils import *
+from task import TASK_REGISTRY
+
 
 import time
 import os
@@ -46,6 +48,7 @@ import argparse
 parser = argparse.ArgumentParser()
 # parser.add_argument('--len', type=int, default=100)
 # parser.add_argument('--smiles', type=str,default=None)
+parser.add_argument("--task", required=True, choices=TASK_REGISTRY.keys(), help="task to run")
 parser.add_argument('--num_designs',type= int, default = 1)
 parser.add_argument('--motif', type=str, default="3ixt")
 parser.add_argument('-o','--outpath', type=str, default = "./out/")
@@ -414,6 +417,9 @@ class MultistateDesigner:
         ):
             self.do_iter(boltz_model, opt)
 
+
+
+# boltz setup
 predict_args={
     "recycling_steps": 0,
     "sampling_steps": 200,
@@ -439,16 +445,18 @@ boltz_model = Boltz1.load_from_checkpoint(
 out_dir = os.path.join(args.outpath, args.motif)
 os.makedirs(out_dir, exist_ok=True)
 
+# design
 for design in range(args.num_designs):
     print(f"\nStarting design {design+1}/{args.num_designs} for motif {args.motif}")
     
     motif = get_motif(f'motifs/{args.motif}.pdb')
     
-    designer = MultistateDesigner(num_states=2)
-    designer.add_motif(motif, state=0)
-    designer.add_anti_motif(motif, state=1)
-    designer.add_ligand('Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C', state=1)
-    designer.initialize(length=len(motif['motif_mask']))
+    # init task
+    designer = task.onemotif_twostates_neg(
+        motif=motif, 
+        ligand='Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C',
+        length=len(motif['motif_mask'])
+        )
 
     t0 = time.perf_counter()
     print("Optimizing sequence...")
