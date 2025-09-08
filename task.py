@@ -42,3 +42,25 @@ def onemotif_twostates_pos(motif, ligand, length):
     designer.initialize(length=length)
     
     return designer
+
+
+@task('twomotif_twostates')
+def twomotif_twostates(motifA,motifB, ligand, length):
+    """
+    Sequence folds into two structure states switching between two motifs: 
+    - State 0: motif A inactive and motif B active when ligand unbound
+    - State 1: motif A active and motif B inactive when ligand bound
+    """
+    
+    designer = MultistateDesigner(num_states=2)
+    
+    designer.add_anti_motif(motifA, state=0)
+    designer.add_motif(motifB, state=0)
+    
+    designer.add_anti_motif(motifB, state=1)
+    designer.add_motif(motifA, state=1)
+    designer.add_ligand(ligand, state=1)
+    
+    designer.initialize(length=length)
+    
+    return designer
