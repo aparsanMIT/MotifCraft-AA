@@ -6,45 +6,23 @@ from boltz.model.model import Boltz1
 from boltz.main import BoltzDiffusionParams
 from boltz.data.write.mmcif import to_mmcif
 from boltz.data.write.pdb import to_pdb
-import numpy as np
-from utils import protein, residue_constants
 from task import TASK_REGISTRY
 import time
 import os
 import argparse
+from utils import motif_utils
 
 parser = argparse.ArgumentParser()
 # parser.add_argument('--len', type=int, default=100)
 # parser.add_argument('--smiles', type=str,default=None)
 parser.add_argument('--num_designs',type= int, default = 1)
-parser.add_argument('--motif', type=str, default="3ixt")
+# parser.add_argument('--motif', type=str, default="3ixt")
+parser.add_argument("--motifs", nargs="+", required=True, help="motif names (e.g. 4jhw 1ycr)")
 parser.add_argument('-o','--outpath', type=str, default = "./out/")
 parser.add_argument("--task", required=True, choices=TASK_REGISTRY.keys(), help="task to run")
 args = parser.parse_args()
 
 device = "cuda"
-
-def get_motif(path):
-    from utils.motif_utils import load_motif_spec, sample_motif_mask
-    spec = load_motif_spec(path)
-    masks = sample_motif_mask(spec)
-    motif_mask = masks['sequence']
-    motif_idx = masks['group']
-    with open(path) as f:
-        prot = protein.from_pdb_string(f.read())
-    
-    ca_pos = np.zeros((len(motif_mask), 3))
-    ca_pos[motif_mask] = prot.atom_positions[:,2] # use CB positions - check glycine!
-
-    seq = ['X']*len(motif_mask)
-    for idx, aatype in zip(motif_mask.nonzero()[0], prot.aatype):
-        seq[idx] = residue_constants.restypes[aatype]
-    return {
-        'motif_mask': motif_mask,
-        'ca_pos': ca_pos,
-        'motif_seq': ''.join(seq)
-    }
-        
 
 
 # boltz setup
@@ -70,17 +48,19 @@ boltz_model = Boltz1.load_from_checkpoint(
     no_atom_encoder=False,
 ).eval().requires_grad_(False)
 
-out_dir = os.path.join(args.outpath, args.task, args.motif)
+out_dir = os.path.join(args.outpath, args.task, "_".join(args.motifs))
 os.makedirs(out_dir, exist_ok=True)
 
 # design
 for design in range(args.num_designs):
-    print(f"\nStarting  {args.task} design {design+1}/{args.num_designs} for motif {args.motif}")
+    print(f"\nStarting  {args.task} design {design+1}/{args.num_designs} for motif {args.motifs}")
     
     # init task
-    motif = get_motif(f'motifs/{args.motif}.pdb')
+    # motif = get_motif(f'motifs/{args.motif}.pdb')
+    motif_templates = motif_utils.get_motif_scaffold_templates([f"motifs/{m}.pdb" for m in args.motifs])
+    # breakpoint()
     ligand = 'Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C'
-    designer = TASK_REGISTRY[args.task](motif, ligand, length=len(motif['motif_mask']))
+    designer = TASK_REGISTRY[args.task](*motif_templates, ligand, length=len(motif_templates[0]['motif_mask']))
     
     t0 = time.perf_counter()
     print("Optimizing sequence...")
@@ -97,8 +77,9 @@ for design in range(args.num_designs):
     design_dir = os.path.join(out_dir, f"design{design}")
     os.makedirs(design_dir, exist_ok=True)
     
-    with open(os.path.join(design_dir,f"{args.motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
-        pickle.dump(motif, f)
+    for i, motif in enumerate(args.motifs):
+        with open(os.path.join(design_dir,f"{motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
+            pickle.dump(motif_templates[i], f)
         
     for output, struct_list, state_idx in structs:
         with open(os.path.join(design_dir, f"state{state_idx}.pkl"), "wb") as f:
