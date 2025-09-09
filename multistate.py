@@ -94,16 +94,16 @@ class MultistateDesigner:
                 motif_seq = torch.nn.functional.one_hot(torch.tensor(motif_seq), num_classes=22)
                 self.fixed_aa[motif_mask,:22] = motif_seq.to(device)[motif_mask].float()
 
-                ca_pos = torch.from_numpy(motif['ca_pos']).to(device)
-                dmat = torch.square(ca_pos[None] - ca_pos[:,None]).sum(-1)**0.5
+                cb_pos = torch.from_numpy(motif['cb_pos']).to(device)
+                dmat = torch.square(cb_pos[None] - cb_pos[:,None]).sum(-1)**0.5
                 dmat[~motif_mask,:] = dmat[:,~motif_mask] = 0
                 self.dmats[i] = dmat
 
         for i, anti_motif in enumerate(self.anti_motifs):
             if anti_motif is not None:
                 motif_mask = torch.from_numpy(anti_motif['motif_mask']).to(device)
-                ca_pos = torch.from_numpy(anti_motif['ca_pos']).to(device)
-                dmat = torch.square(ca_pos[None] - ca_pos[:,None]).sum(-1)**0.5
+                cb_pos = torch.from_numpy(anti_motif['cb_pos']).to(device)
+                dmat = torch.square(cb_pos[None] - cb_pos[:,None]).sum(-1)**0.5
                 dmat[~motif_mask,:] = dmat[:,~motif_mask] = 0
                 self.anti_dmats[i] = dmat
 
