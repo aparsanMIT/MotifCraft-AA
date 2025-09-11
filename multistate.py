@@ -196,7 +196,8 @@ class MultistateDesigner:
         motif_mse_loss = (motif_mse_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
     
         return -0.5*motif_mse_loss
-        
+        # return -motif_mse_loss
+
     def get_i_contact_loss(self, pdist, opt, chain_mask):
         mid_pts = get_mid_points(pdist).to(self.device)
         #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
