@@ -14,9 +14,9 @@ visible_devices_list=(0 1 2 3 4 5 6 7)   # gpus available on thes machine
 motifs=(6e6r_med 6e6r_short 6exz_long 6exz_med 6exz_short 7mrx_60 7mrx_85 7mrx_128)
 
 # ligands for allostery
-ligands='[Zn+2]'
+ligands='[Mg+2]'
 
-outdir=./out/onemotif_twostates_neg_zn
+outdir=./out/onemotif_twostates_neg_mg
 
 conda_env=boltz_design
 home_override=/data/cb/mihirb14/bin
