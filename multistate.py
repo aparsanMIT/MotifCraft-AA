@@ -12,7 +12,7 @@ with open(os.path.expanduser(os.path.join(os.environ["HOME"], ".boltz/ccd.pkl"))
     CCD_LIB = pickle.load(f)
     
     
-def get_batch_with_ligand(seq, ligand=None, device='cuda'):
+def get_batch_with_ligand(seq, ligand=None, device="cuda"):
     data = {
         "version": 1,
         "sequences": [
@@ -25,13 +25,27 @@ def get_batch_with_ligand(seq, ligand=None, device='cuda'):
             },
         ],
     }
+
     if ligand is not None:
-        data['sequences'].append({
-            "ligand": {
-                "id": ["B"],
-                "smiles": ligand,
-            }
-        })
+        assert isinstance(ligand, tuple) and len(ligand) == 2, "ligand must be a (value, mol_type) tuple"
+        ligand, mol_type = ligand
+        if mol_type == "ligand":
+            data["sequences"].append({
+                "ligand": {
+                    "id": ["B"],
+                    "smiles": ligand,
+                }
+            })
+        elif mol_type in ("dna", "rna"):
+            data["sequences"].append({
+                mol_type: {
+                    "id": ["B"],
+                    "sequence": ligand,
+                }
+            })
+        else:
+            raise ValueError(f"Unsupported mol_type: {mol_type}")
+
     target = parse_boltz_schema(None, data, CCD_LIB)
     batch, structure = get_batch(target)
     batch = {key: value.unsqueeze(0).to(device) for key, value in batch.items()}

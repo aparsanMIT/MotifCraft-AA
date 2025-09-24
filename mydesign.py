@@ -40,6 +40,9 @@ def _init_boltz():
     return boltz_model
 
 def run(args):
+    args.ligands = [(x.split(":", 1)[1], x.split(":", 1)[0]) if ":" in x else (x, "ligand")
+           for x in args.ligands]
+    print(args.ligands)
     # boltz setup
     boltz_model = _init_boltz()
 

@@ -9,13 +9,13 @@ task=onemotif_twostates_neg
 visible_devices_list=(0 1 2 3 4 5 6 7)   # gpus available on thes machine
 
  # motifs to design
-motifs=(1bcf 1prw 1qjg 1ycr 2kl8 3ixt 4jhw 4zyp)                      
-# motifs=(5ius 5tpn 5trv_long 5trv_med 5trv_short 5wn9 5yui 6e6r_long)     
+# motifs=(1bcf 1prw 1qjg 1ycr 2kl8 3ixt 4jhw 4zyp)                      
+motifs=(5ius 5tpn 5trv_long 5trv_med 5trv_short 5wn9 5yui 6e6r_long)     
 # motifs=(6e6r_med 6e6r_short 6exz_long 6exz_med 6exz_short 7mrx_60 7mrx_85 7mrx_128)
 
-# ligands for allostery
+# ligands for allostery (should be of form type:value, default type is ligand)
 # ligands='[Mg+2]'
-ligands='CC1=CC2=C(C=C1C)N(C3=NC(=O)NC(=O)C3=N2)C[C@@H]([C@@H]([C@@H](COP(=O)(O)OP(=O)(O)OC[C@@H]4[C@H]([C@H]([C@@H](O4)N5C=NC6=C(N=CN=C65)N)O)O)O)O)O'
+ligands='ligand:CC1=CC2=C(C=C1C)N(C3=NC(=O)NC(=O)C3=N2)C[C@@H]([C@@H]([C@@H](COP(=O)(O)OP(=O)(O)OC[C@@H]4[C@H]([C@H]([C@@H](O4)N5C=NC6=C(N=CN=C65)N)O)O)O)O)O'
 
 outdir=./out/onemotif_twostates_neg_FAD
 
