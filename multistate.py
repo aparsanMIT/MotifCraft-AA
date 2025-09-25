@@ -10,7 +10,11 @@ torch.set_float32_matmul_precision("highest")
 
 with open(os.path.expanduser(os.path.join(os.environ["HOME"], ".boltz/ccd.pkl")), "rb") as f:
     CCD_LIB = pickle.load(f)
-    
+
+
+def revcomp(seq: str) -> str:
+    complement = str.maketrans("ACGT", "TGCA")
+    return seq.upper().translate(complement)[::-1]
     
 def get_batch_with_ligand(seq, ligand=None, device="cuda"):
     data = {
@@ -36,11 +40,24 @@ def get_batch_with_ligand(seq, ligand=None, device="cuda"):
                     "smiles": ligand,
                 }
             })
-        elif mol_type in ("dna", "rna"):
+        elif mol_type in "rna":
             data["sequences"].append({
                 mol_type: {
                     "id": ["B"],
                     "sequence": ligand,
+                }
+            })
+        elif mol_type in "dna":
+            data["sequences"].append({
+                "dna": {
+                    "id": ["B"],
+                    "sequence": ligand,
+                }
+            })
+            data["sequences"].append({
+                "dna": {
+                    "id": ["C"],
+                    "sequence": revcomp(ligand),
                 }
             })
         else:
