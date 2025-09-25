@@ -16,7 +16,7 @@ def revcomp(seq: str) -> str:
     complement = str.maketrans("ACGT", "TGCA")
     return seq.upper().translate(complement)[::-1]
     
-def get_batch_with_ligand(seq, ligand=None, device="cuda"):
+def get_batch_with_ligands(seq, ligands=None, device="cuda"):
     data = {
         "version": 1,
         "sequences": [
@@ -29,37 +29,41 @@ def get_batch_with_ligand(seq, ligand=None, device="cuda"):
             },
         ],
     }
-
-    if ligand is not None:
-        assert isinstance(ligand, tuple) and len(ligand) == 2, "ligand must be a (value, mol_type) tuple"
-        ligand, mol_type = ligand
-        if mol_type == "ligand":
-            data["sequences"].append({
-                "ligand": {
-                    "id": ["B"],
-                    "smiles": ligand,
-                }
-            })
-        elif mol_type in "rna":
-            data["sequences"].append({
-                mol_type: {
-                    "id": ["B"],
-                    "sequence": ligand,
-                }
-            })
-        elif mol_type in "dna":
-            data["sequences"].append({
-                "dna": {
-                    "id": ["B"],
-                    "sequence": ligand,
-                }
-            })
-            data["sequences"].append({
-                "dna": {
-                    "id": ["C"],
-                    "sequence": revcomp(ligand),
-                }
-            })
+    ALPHABET = "BCDEFGHIJKLMNOPQRSTUVWXYZ"
+    for ligand in ligands:
+        if ligand is not None:
+            assert isinstance(ligand, tuple) and len(ligand) == 2, "ligand must be a (value, mol_type) tuple"
+            ligand, mol_type = ligand
+            if mol_type == "ligand":
+                data["sequences"].append({
+                    "ligand": {
+                        "id": [ALPHABET[0]],
+                        "smiles": ligand,
+                    }
+                })
+                ALPHABET = ALPHABET[1:]
+            elif mol_type in "rna":
+                data["sequences"].append({
+                    mol_type: {
+                        "id": [ALPHABET[0]],
+                        "sequence": ligand,
+                    }
+                })
+                ALPHABET = ALPHABET[1:]
+            elif mol_type in "dna":
+                data["sequences"].append({
+                    "dna": {
+                        "id": [ALPHABET[0]],
+                        "sequence": ligand,
+                    }
+                })
+                data["sequences"].append({
+                    "dna": {
+                        "id": [ALPHABET[1]],
+                        "sequence": revcomp(ligand),
+                    }
+                })
+                ALPHABET = ALPHABET[2:]
         else:
             raise ValueError(f"Unsupported mol_type: {mol_type}")
 
@@ -84,28 +88,131 @@ def get_batch_with_ligand(seq, ligand=None, device="cuda"):
     batch["res_type"] = batch["res_type"].float()
 
     return batch, structure
-    
-class MultistateDesigner:
-    def __init__(self, num_states):
-        self.motifs = [None]*num_states
-        self.ligands = [None]*num_states
-        self.anti_motifs = [None]*num_states
-        
-        
-    def add_motif(self, motif, state):
-        self.motifs[state] = motif
 
-    def add_anti_motif(self, motif, state):
-        self.anti_motifs[state] = motif
+
+class MotifLoss:
+    def __init__(self, motif):
+        self.motif = motif
+        cb_pos = motif['cb_pos']
+        dmat = np.square(cb_pos[None] - cb_pos[:,None]).sum(-1)**0.5
+        motif_mask = motif['motif_mask']
+        dmat[~motif_mask,:] = dmat[:,~motif_mask] = 0
+        self.dmat = dmat
+        
+    def evaluate(self, dict_out, device, opt=None):
+        pdist = dict_out['pdistogram']
+        
+        mid_pts = get_mid_points(pdist).to(device)
+        motif_dmat = torch.from_numpy(self.dmat).to(device)
+        pdist = pdist[:,:len(motif_dmat),:len(motif_dmat)]
+        motif_dmat_mask = (motif_dmat > 1e-3) & (motif_dmat < 22)
+        
+        # edist = (pdist.softmax(-1) * mid_pts).sum(-1)
+        # motif_edist_loss = (motif_dmat - edist)**2
+        # motif_edist_loss = (motif_edist_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
+    
+        motif_mse_loss = (pdist.softmax(-1) * (mid_pts - motif_dmat[...,None])**2).sum(-1)
+        motif_mse_loss = (motif_mse_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
+    
+        # motif_dmat_idx = (motif_dmat[...,None] - mid_pts).abs().argmin(-1)
+        # motif_ce_loss = torch.nn.functional.cross_entropy(pdist.permute(0,3,1,2), motif_dmat_idx[None], reduction='none')
+    
+        # motif_ce_loss = (motif_ce_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
+    
+        return motif_mse_loss
+
+
+class AntiMotifLoss:
+    def __init__(self, motif):
+        self.motif = motif
+        cb_pos = motif['cb_pos']
+        dmat = np.square(cb_pos[None] - cb_pos[:,None]).sum(-1)**0.5
+        motif_mask = motif['motif_mask']
+        dmat[~motif_mask,:] = dmat[:,~motif_mask] = 0
+        self.dmat = dmat
+        
+    def evaluate(self, dict_out, device, opt=None):
+        pdist = dict_out['pdistogram']
+        
+        mid_pts = get_mid_points(pdist).to(device)
+        motif_dmat = torch.from_numpy(self.dmat).to(device)
+        pdist = pdist[:,:len(motif_dmat),:len(motif_dmat)]
+        motif_dmat_mask = (motif_dmat > 1e-3) & (motif_dmat < 22)
+    
+        motif_mse_loss = (pdist.softmax(-1) * (mid_pts - motif_dmat[...,None])**2).sum(-1)
+        motif_mse_loss = (motif_mse_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
+    
+        return -0.5*motif_mse_loss
+
+class ContactLoss:
+    def __init__(self):
+        pass
+    def evaluate(self, dict_out, device, opt=None):
+        chain_mask = dict_out['mol_type'] == 0
+        pdist = dict_out['pdistogram']
+        mid_pts = get_mid_points(pdist).to(device)
+        #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
+        con_loss = get_con_loss(
+            pdist,
+            mid_pts,
+            num=1,
+            seqsep=9,
+            cutoff=14.,
+            binary=False,
+            mask_1d=chain_mask,
+            mask_1b=chain_mask,
+        )
+        return con_loss        
+
+
+class LigandContactLoss:
+    def __init__(self, idx=1):
+        self.idx = idx
+        
+    def evaluate(self, dict_out, device, opt=None):
+        chain_mask = dict_out['mol_type'] == 0
+        i_chain_mask = dict_out['mol_type'] == self.idx
+        pdist = dict_out['pdistogram']
+        mid_pts = get_mid_points(pdist).to(device)
+        #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
+        i_con_loss = get_con_loss(
+            pdist,
+            mid_pts,
+            num=2,
+            seqsep=0,
+            num_pos=int(opt["num_optimizing_binder_pos"]),
+            cutoff=20.,
+            binary=False,
+            mask_1d=chain_mask,
+            mask_1b=i_chain_mask,
+        )
+        return i_con_loss
+
+
+class MultistateDesigner:
+    def __init__(self, num_states=1):
+        self.ligands = [[]]*num_states
+        self.motifs = []
+        self.losses = []
         
     def add_ligand(self, ligand, state):
-        self.ligands[state] = ligand
+        if type(ligand) is list:
+            self.ligands[state].extend(ligand)
+        else:
+            self.ligands[state].append(ligand)
+            
+    def add_motif(self, motif):
+        self.motifs.append(motif)
 
+    def add_loss(self, loss, state):
+        self.losses.append((loss, state))
+        
     def initialize(self, length, device='cuda'):
         self.device = device
         self.batches = []
-        for i, lig in enumerate(self.ligands):
-            self.batches.append(get_batch_with_ligand('X'*length, lig, device)[0])
+        for i, ligs in enumerate(self.ligands):
+            self.batches.append(get_batch_with_ligands('X'*length, ligs, device)[0])
+            self.add_loss(ContactLoss(), state=i)
         
         z = torch.distributions.Gumbel(0, 1).sample((length, 33)).to(device)
         z[...,:2] = z[...,22:] = -np.inf
@@ -114,29 +221,16 @@ class MultistateDesigner:
         alphabet = list("XXARNDCQEGHILKMFPSTWYV-")
         self.fixed_mask = torch.zeros(length, dtype=bool, device=device)
         self.fixed_aa = torch.zeros_like(self.logits)
-        self.dmats = [None]*len(self.motifs)
-        self.anti_dmats = [None]*len(self.anti_motifs)
         
         for i, motif in enumerate(self.motifs):
             if motif is not None:
                 motif_mask = torch.from_numpy(motif['motif_mask']).to(device)
                 self.fixed_mask |= motif_mask
                 motif_seq = [alphabet.index(c) for c in motif['motif_seq']]                
-                motif_seq = torch.nn.functional.one_hot(torch.tensor(motif_seq), num_classes=22)
+                motif_seq = torch.nn.functional.one_hot(
+                    torch.tensor(motif_seq), num_classes=22
+                )
                 self.fixed_aa[motif_mask,:22] = motif_seq.to(device)[motif_mask].float()
-
-                cb_pos = torch.from_numpy(motif['cb_pos']).to(device)
-                dmat = torch.square(cb_pos[None] - cb_pos[:,None]).sum(-1)**0.5
-                dmat[~motif_mask,:] = dmat[:,~motif_mask] = 0
-                self.dmats[i] = dmat
-
-        for i, anti_motif in enumerate(self.anti_motifs):
-            if anti_motif is not None:
-                motif_mask = torch.from_numpy(anti_motif['motif_mask']).to(device)
-                cb_pos = torch.from_numpy(anti_motif['cb_pos']).to(device)
-                dmat = torch.square(cb_pos[None] - cb_pos[:,None]).sum(-1)**0.5
-                dmat[~motif_mask,:] = dmat[:,~motif_mask] = 0
-                self.anti_dmats[i] = dmat
 
         self.logits = torch.where(self.fixed_mask[...,None], self.fixed_aa, self.logits)
 
@@ -154,8 +248,8 @@ class MultistateDesigner:
             "write_full_pde": True,
         }
         results = []
-        for i, ligand in enumerate(self.ligands):
-            new_batch, new_struct = get_batch_with_ligand(self.get_seq(), ligand)
+        for i, ligands in enumerate(self.ligands):
+            new_batch, new_struct = get_batch_with_ligands(self.get_seq(), ligands)
 
             output = run_model(boltz_model, new_batch, predict_args)
             coords_all = output["coords"]
@@ -195,86 +289,12 @@ class MultistateDesigner:
     
         return pseudo
 
-    def get_motif_loss(self, pdist, motif_dmat):
-        
-        mid_pts = get_mid_points(pdist).to(self.device)
-
-        pdist = pdist[:,:len(motif_dmat),:len(motif_dmat)]
-        motif_dmat_mask = (motif_dmat > 1e-3) & (motif_dmat < 22)
-        
-        # edist = (pdist.softmax(-1) * mid_pts).sum(-1)
-        # motif_edist_loss = (motif_dmat - edist)**2
-        # motif_edist_loss = (motif_edist_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
-    
-        motif_mse_loss = (pdist.softmax(-1) * (mid_pts - motif_dmat[...,None])**2).sum(-1)
-        motif_mse_loss = (motif_mse_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
-    
-        # motif_dmat_idx = (motif_dmat[...,None] - mid_pts).abs().argmin(-1)
-        # motif_ce_loss = torch.nn.functional.cross_entropy(pdist.permute(0,3,1,2), motif_dmat_idx[None], reduction='none')
-    
-        # motif_ce_loss = (motif_ce_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
-    
-        return motif_mse_loss
-    
-    def get_anti_motif_loss(self, pdist, motif_dmat):
-        
-        mid_pts = get_mid_points(pdist).to(self.device)
-
-        pdist = pdist[:,:len(motif_dmat),:len(motif_dmat)]
-        motif_dmat_mask = (motif_dmat > 1e-3) & (motif_dmat < 22)
-    
-        motif_mse_loss = (pdist.softmax(-1) * (mid_pts - motif_dmat[...,None])**2).sum(-1)
-        motif_mse_loss = (motif_mse_loss * motif_dmat_mask).sum() / motif_dmat_mask.sum()
-    
-        return -0.5*motif_mse_loss
-        # return -motif_mse_loss
-
-    def get_i_contact_loss(self, pdist, opt, chain_mask):
-        mid_pts = get_mid_points(pdist).to(self.device)
-        #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
-        i_con_loss = get_con_loss(
-            pdist,
-            mid_pts,
-            num=2,
-            seqsep=0,
-            num_pos=int(opt["num_optimizing_binder_pos"]),
-            cutoff=20.,
-            binary=False,
-            mask_1d=chain_mask,
-            mask_1b=1 - chain_mask,
-        )
-        return i_con_loss
-
-
-    def get_contact_loss(self, pdist, opt, chain_mask):
-        mid_pts = get_mid_points(pdist).to(self.device)
-        #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
-        con_loss = get_con_loss(
-            pdist,
-            mid_pts,
-            num=1,
-            seqsep=9,
-            cutoff=14.,
-            binary=False,
-            mask_1d=chain_mask,
-            mask_1b=chain_mask,
-        )
-        return con_loss
-            
     def get_loss(self, restype, boltz_model, opt, verbose=False):
-        loss = 0
-        loss_dict = {}
-        for i, (
-            dmat,
-            anti_dmat,
-            ligand,
-            batch,
-        ) in enumerate(zip(
-            self.dmats,
-            self.anti_dmats,
-            self.ligands,
-            self.batches
-        )):
+        total_loss = 0
+        loss_dict = []
+
+        boltz_out = []
+        for batch in self.batches:
             batch['res_type'] = torch.cat([
                 restype[None],
                 batch['res_type'][:,len(restype):].detach()
@@ -283,33 +303,22 @@ class MultistateDesigner:
             batch["profile"] = batch["msa"].float().mean(dim=0).detach()
 
             dict_out = boltz_model.get_distogram(batch)[0]
-            if dmat is not None:
-                motif_loss = self.get_motif_loss( dict_out["pdistogram"], dmat)
-                loss_dict[f'state{i}_motif'] = motif_loss
-                loss = loss + motif_loss 
+            boltz_out.append(batch | dict_out)
 
-            if anti_dmat is not None:
-                anti_motif_loss = self.get_anti_motif_loss( dict_out["pdistogram"], anti_dmat)
-                loss_dict[f'state{i}_anti_motif'] = anti_motif_loss
-                loss = loss + anti_motif_loss
-            
-            chain_mask = batch['mol_type'] == 0
-            if ligand is not None:
-                i_contact_loss = self.get_i_contact_loss(
-                    dict_out["pdistogram"], opt, chain_mask.float()
-                )
-                loss_dict[f'state{i}_i_contact'] = i_contact_loss
-                loss = loss + i_contact_loss
 
-            contact_loss = self.get_contact_loss(
-                dict_out["pdistogram"], opt, chain_mask.float()
-            )
-            loss_dict[f'state{i}_contact'] = contact_loss
-            loss = loss + contact_loss
+        for loss, state in self.losses:
+            if type(state) is list:
+                readout = [boltz_out[s] for s in state]
+            else:
+                readout = boltz_out[state]
+            this_loss = loss.evaluate(readout, boltz_model.device, opt)
+            loss_dict.append((type(loss), state, this_loss.item()))
+            total_loss = total_loss + this_loss
+
         if verbose:
             print(loss_dict)
             print(self.get_seq())
-        return loss
+        return total_loss
         
             
     def do_iter(self, boltz_model, opt, pre_run=False, verbose=False):

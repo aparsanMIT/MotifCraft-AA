@@ -6,7 +6,7 @@ from boltz.model.model import Boltz1
 from boltz.main import BoltzDiffusionParams
 from boltz.data.write.mmcif import to_mmcif
 from boltz.data.write.pdb import to_pdb
-from task import TASK_REGISTRY
+
 import time
 import os
 import argparse
@@ -26,7 +26,7 @@ def _init_boltz():
     diffusion_params = BoltzDiffusionParams()
     diffusion_params.step_scale = 1.638  # Default value
     boltz_model = Boltz1.load_from_checkpoint(
-        os.path.join(os.environ['HOME'],".boltz/boltz1_conf.ckpt"),
+        os.path.join("boltz/boltz1_conf.ckpt"),
         strict=False,
         predict_args=predict_args,
         map_location=device,
@@ -40,11 +40,14 @@ def _init_boltz():
     return boltz_model
 
 def run(args):
+    if args.v1:
+        from task import TASK_REGISTRY
+    else:
+        from task2 import TASK_REGISTRY
     args.ligands = [(x.split(":", 1)[1], x.split(":", 1)[0]) if ":" in x else (x, "ligand")
            for x in args.ligands]
     print(args.ligands)
     # boltz setup
-    boltz_model = _init_boltz()
 
     out_dir = os.path.join(args.outpath, "_".join(args.motifs))
     os.makedirs(out_dir, exist_ok=True)
@@ -52,6 +55,8 @@ def run(args):
     # design
     for design in range(args.num_designs):
         print(f"\nStarting  {args.task} design {design+1}/{args.num_designs} for motifs {args.motifs} and ligands {args.ligands}")
+        
+        boltz_model = _init_boltz()
         
         # init task
         # motif = get_motif(f'motifs/{args.motif}.pdb')
@@ -63,7 +68,7 @@ def run(args):
         
         t0 = time.perf_counter()
         print("Optimizing sequence...")
-        designer.optimize(boltz_model)
+        designer.optimize(boltz_model, verbose=args.verbose, debug=args.debug)
         t1 = time.perf_counter()
         print(f"Optimization done in {t1 - t0:.1f} sec")
 
@@ -99,9 +104,12 @@ if __name__ == "__main__":
     # parser.add_argument('--len', type=int, default=100)
     parser.add_argument('--num_designs',type= int, default = 1)
     parser.add_argument("--motifs", nargs="+", required=True, help="motif names (e.g. 4jhw 1ycr)")
-    parser.add_argument('--ligands', nargs="+",default=["Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C"] ,help="space separated ligand smiles")
+    parser.add_argument('--ligands', nargs="+",default=["ligand:Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C"] ,help="space separated ligand smiles")
     parser.add_argument('-o','--outpath', type=str, default = "./out/")
-    parser.add_argument("--task", required=True, choices=TASK_REGISTRY.keys(), help="task to run")
+    parser.add_argument("--task", required=True, help="task to run")
+    parser.add_argument("--debug", action='store_true')
+    parser.add_argument("--verbose", action='store_true')
+    parser.add_argument("--v1", action='store_true')
     args = parser.parse_args()
 
     
