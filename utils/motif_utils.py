@@ -11,7 +11,10 @@ def get_motif_scaffold_templates(paths):
     full_motif_mask = masks['sequence']	    # does not separate motifs, just boolean mask for scaffold/motif
     motif_groups = masks['group']		    # this separates motifs by group index (0 is scaffold, 1 is first motif, ... so on)
     motif_templates = []
-    # breakpoint()
+    # length_to_add = 80 - len(full_motif_mask)
+    # full_motif_mask = np.append(full_motif_mask,[False]*length_to_add)
+    # motif_groups = np.append(motif_groups,[0]*length_to_add)
+
     for i,path in enumerate(paths):	# for each motif
         motif_idx = i+1
         motif_mask = motif_groups == motif_idx
