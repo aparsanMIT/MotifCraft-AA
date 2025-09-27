@@ -44,7 +44,7 @@ def onemotif_twostates_pos(motifs, ligands, length):
     return designer
 
 
-@task('twomotif_twostates')
+@task('twomotif_twostates') #hasn't been refactored
 def twomotif_twostates(motifs, ligands, length):
     """
     Sequence folds into two structure states switching between two motifs: 

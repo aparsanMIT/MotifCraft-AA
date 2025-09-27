@@ -16,7 +16,7 @@ device = "cuda"
 
 def _init_boltz():
     predict_args={
-        "recycling_steps": 0,
+        "recycling_steps": args.recycles,
         "sampling_steps": 200,
         "diffusion_samples": 1,
         "write_confidence_summary": True,
@@ -44,27 +44,45 @@ def run(args):
         from task import TASK_REGISTRY
     else:
         from task2 import TASK_REGISTRY
-    args.ligands = [(x.split(":", 1)[1], x.split(":", 1)[0]) if ":" in x else (x, "ligand")
-           for x in args.ligands]
-    print(args.ligands)
+    ligands = []
+    for ligs in args.ligands:
+        ligands.append([])
+        for lig in ligs.split(','):
+            ligands[-1].append(tuple(lig.split(':')[::-1]))
+    # args.ligands = [(x.split(":", 1)[1], x.split(":", 1)[0]) if ":" in x else (x, "ligand")
+    #        for x in args.ligands]
+    print(ligands)
     # boltz setup
-
-    out_dir = os.path.join(args.outpath, "_".join(args.motifs))
+    if args.motifs:
+        out_dir = os.path.join(args.outpath, "_".join(args.motifs))
+    else:
+        out_dir = args.outpath
     os.makedirs(out_dir, exist_ok=True)
 
     # design
-    for design in range(args.num_designs):
-        print(f"\nStarting  {args.task} design {design+1}/{args.num_designs} for motifs {args.motifs} and ligands {args.ligands}")
+    for design in range(args.worker_id, args.num_designs, args.num_workers):
+        print(f"\nStarting  {args.task} design {design+1}/{args.num_designs} for motifs {args.motifs} and ligands {ligands}")
         
         boltz_model = _init_boltz()
         
         # init task
         # motif = get_motif(f'motifs/{args.motif}.pdb')
-        motif_templates = motif_utils.get_motif_scaffold_templates([f"motifs/{m}.pdb" for m in args.motifs])
+        
         # breakpoint()
         # ligand = 'Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C'
-
-        designer = TASK_REGISTRY[args.task](motifs=motif_templates, ligands=args.ligands, length=len(motif_templates[0]['motif_mask']))
+        
+        if args.motifs:
+            motif_templates = motif_utils.get_motif_scaffold_templates([f"motifs/{m}.pdb" for m in args.motifs])
+            length=len(motif_templates[0]['motif_mask'])
+        else:
+            motif_templates = []
+            length = args.length
+        designer = TASK_REGISTRY[args.task](
+            motifs=motif_templates,
+            ligands=ligands,
+            length=length,
+            strength=args.strength,
+        )
         
         t0 = time.perf_counter()
         print("Optimizing sequence...")
@@ -80,10 +98,10 @@ def run(args):
         
         design_dir = os.path.join(out_dir, f"design{design}")
         os.makedirs(design_dir, exist_ok=True)
-        
-        for i, motif in enumerate(args.motifs):
-            with open(os.path.join(design_dir,f"{motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
-                pickle.dump(motif_templates[i], f)
+        if args.motifs:
+            for i, motif in enumerate(args.motifs):
+                with open(os.path.join(design_dir,f"{motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
+                    pickle.dump(motif_templates[i], f)
             
         for output, struct_list, state_idx in structs:
             with open(os.path.join(design_dir, f"state{state_idx}.pkl"), "wb") as f:
@@ -103,13 +121,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # parser.add_argument('--len', type=int, default=100)
     parser.add_argument('--num_designs',type= int, default = 1)
-    parser.add_argument("--motifs", nargs="+", required=True, help="motif names (e.g. 4jhw 1ycr)")
+    parser.add_argument("--motifs", nargs="+", required=False, help="motif names (e.g. 4jhw 1ycr)")
     parser.add_argument('--ligands', nargs="+",default=["ligand:Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C"] ,help="space separated ligand smiles")
     parser.add_argument('-o','--outpath', type=str, default = "./out/")
     parser.add_argument("--task", required=True, help="task to run")
     parser.add_argument("--debug", action='store_true')
     parser.add_argument("--verbose", action='store_true')
     parser.add_argument("--v1", action='store_true')
+    parser.add_argument("--recycles", default=0, type=int)
+    parser.add_argument("--length", default=None, type=int)
+    parser.add_argument("--num_workers", default=1, type=int)
+    parser.add_argument("--worker_id", default=0, type=int)
+    parser.add_argument("--strength", default=0, type=float)
     args = parser.parse_args()
 
     

@@ -42,6 +42,23 @@ def get_batch_with_ligands(seq, ligands=None, device="cuda"):
                     }
                 })
                 ALPHABET = ALPHABET[1:]
+            elif mol_type == "ccd":
+                data["sequences"].append({
+                    "ligand": {
+                        "id": [ALPHABET[0]],
+                        "ccd": ligand,
+                    }
+                })
+                ALPHABET = ALPHABET[1:]
+            elif mol_type == "protein":
+                data["sequences"].append({
+                    "protein": {
+                        "id": [ALPHABET[0]],
+                        "sequence": ligand,
+                        "msa": "empty",
+                    }
+                })
+                ALPHABET = ALPHABET[1:]
             elif mol_type in "rna":
                 data["sequences"].append({
                     mol_type: {
@@ -164,14 +181,32 @@ class ContactLoss:
         )
         return con_loss        
 
+class DifferenceLoss:
+    def __init__(self, strength):
+        self.strength = strength
+        
+    def evaluate(self, dict_out, device, opt=None):
+        
+        chain_mask = dict_out[0]['mol_type'] == 0
+        pdist0 = dict_out[0]['pdistogram'].softmax(dim=-1)[:,chain_mask[0]][:,:,chain_mask[0]]
 
+        chain_mask = dict_out[1]['mol_type'] == 0
+        pdist1 = dict_out[1]['pdistogram'].softmax(dim=-1)[:,chain_mask[0]][:,:,chain_mask[0]]
+        
+        m = (pdist0+pdist1)/2
+        jsd = (pdist0 * (pdist0.log() - m.log())).sum(-1)/2 + (pdist1 * (pdist1.log() - m.log())).sum(-1) / 2
+        return -self.strength * jsd.max(-1).values.mean()
+        
 class LigandContactLoss:
-    def __init__(self, idx=1):
+    def __init__(self, idx=None):
         self.idx = idx
         
     def evaluate(self, dict_out, device, opt=None):
-        chain_mask = dict_out['mol_type'] == 0
-        i_chain_mask = dict_out['mol_type'] == self.idx
+        chain_mask = dict_out['asym_id'] == 0
+        if self.idx is None:
+            i_chain_mask = dict_out['asym_id'] != 0
+        else:
+            i_chain_mask = dict_out['asym_id'] == self.idx
         pdist = dict_out['pdistogram']
         mid_pts = get_mid_points(pdist).to(device)
         #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
@@ -188,10 +223,38 @@ class LigandContactLoss:
         )
         return i_con_loss
 
-
+        
+class AntiLigandContactLoss:
+    def __init__(self, strength=0, idx=None):
+        self.idx = idx
+        self.strength = strength
+        print('AntiLigandContactLoss', self.strength)
+    def evaluate(self, dict_out, device, opt=None):
+        
+        chain_mask = dict_out['asym_id'] == 0
+        if self.idx is None:
+            i_chain_mask = dict_out['asym_id'] != 0
+        else:
+            i_chain_mask = dict_out['asym_id'] == self.idx
+        pdist = dict_out['pdistogram']
+        mid_pts = get_mid_points(pdist).to(device)
+        #num_optimizing_binder_pos = 0 if pre_run else num_optimizing_binder_pos
+        i_con_loss = get_con_loss(
+            pdist,
+            mid_pts,
+            num=2,
+            seqsep=0,
+            num_pos=int(opt["num_optimizing_binder_pos"]),
+            cutoff=20.,
+            binary=False,
+            mask_1d=chain_mask,
+            mask_1b=i_chain_mask,
+        )
+        
+        return -self.strength * i_con_loss
 class MultistateDesigner:
     def __init__(self, num_states=1):
-        self.ligands = [[]]*num_states
+        self.ligands = [[] for _ in range(num_states)]
         self.motifs = []
         self.losses = []
         
