@@ -68,11 +68,6 @@ def twoligands(motifs, ligands, length, strength=10):
 
 @task('twoligands_binding')
 def twoligands_binding(motifs, ligands, length, strength=10):
-    """
-    Sequence folds into two structure states with positive allostery: 
-    - State 0: motif inactive when ligand unbound
-    - State 1: motif active when ligand bound
-    """
     
     designer = MultistateDesigner(num_states=2)
     designer.add_ligand(ligands[0], state=0) # target only
@@ -83,7 +78,21 @@ def twoligands_binding(motifs, ligands, length, strength=10):
     
     return designer
     
-
+@task('twoligands')
+def twoligands(motifs, ligands, length, strength=10):
+    
+    designer = MultistateDesigner(num_states=3)
+    designer.add_ligand(ligands[0], state=1) 
+    designer.add_ligand(ligands[1], state=2) 
+    designer.add_loss(LigandContactLoss(), state=1)
+    designer.add_loss(LigandContactLoss(), state=2)
+    designer.add_loss(DifferenceLoss(strength=strength), state=[0,1])
+    designer.add_loss(DifferenceLoss(strength=strength), state=[1,2])
+    designer.add_loss(DifferenceLoss(strength=strength), state=[0,2])
+    designer.initialize(length=length)
+    
+    return designer
+    
 
 # @task('twomotif_twostates')
 # def twomotif_twostates(motifs, ligands, length):
