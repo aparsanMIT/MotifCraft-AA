@@ -1,0 +1,2 @@
+python mydesign.py -o ./tmp --num_designs 1 --task onemotif_twostates_neg --motifs 1prw --ligands "ligand:CC1=CC
+2=C(C=C1C)N(C3=NC(=O)NC(=O)C3=N2)C[C@@H]([C@@H]([C@@H](COP(=O)(O)OP(=O)(O)OC[C@@H]4[C@H]([C@H]([C@@H](O4)N5C=NC6=C(N=CN=C65)N)O)O)O)O)O"
