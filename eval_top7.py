@@ -39,23 +39,29 @@ def do_job(design_dir):
         outdict0 = CPU_Unpickler(f).load()
     with open(os.path.join(design_dir, f"state1.pkl"), 'rb') as f:
         outdict1 = CPU_Unpickler(f).load()
-
     for i in range(5):  # assume 5 samples per state
         with open(f"{design_dir}/state0_sample{i}.pdb") as f:
             state0.append(protein.from_pdb_string(f.read()))
         with open(f"{design_dir}/state1_sample{i}.pdb") as f:
             state1.append(protein.from_pdb_string(f.read()))
+    
     cross_rmsd = [get_rmsd(state0[i], state1[j]).item() for i in range(5) for j in range(5)]
     intra_rmsd0 = [get_rmsd(state0[i], state0[j]).item() for i in range(5) for j in range(i+1, 5)]
     intra_rmsd1 = [get_rmsd(state1[i], state1[j]).item() for i in range(5) for j in range(i+1, 5)]
     
-    
+    # breakpoint()
     row = {
         "sample": os.path.basename(design_dir ),
         "plddt_0": outdict0["plddt"].cpu().numpy().mean(),
         "ptm_0": outdict0["ptm"].cpu().numpy().mean(),
         "plddt_1": outdict1["plddt"].cpu().numpy().mean(),
         "ptm_1": outdict1["ptm"].cpu().numpy().mean(),
+        'state0_target_iptm_mean': outdict0['pair_chains_iptm'][1][0].mean().item(),
+        'state1_target_iptm_mean': outdict1['pair_chains_iptm'][1][0].mean().item(),
+        'state1_effector_iptm_mean': outdict1['pair_chains_iptm'][2][0].mean().item(),
+        'state0_target_iptm_std': outdict0['pair_chains_iptm'][1][0].std().item(),
+        'state1_target_iptm_std': outdict1['pair_chains_iptm'][1][0].std().item(),
+        'state1_effector_iptm_std': outdict1['pair_chains_iptm'][2][0].std().item(),
         'cross_rmsd_mean': np.mean(cross_rmsd),
         'cross_rmsd_std': np.std(cross_rmsd),
         'intra_rmsd0_mean': np.mean(intra_rmsd0),
