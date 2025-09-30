@@ -15,4 +15,4 @@ outputs
 out/
 setup_mihir.sh
 plots/
-eval.ipynb
+eval_mihir.ipynb
