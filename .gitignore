@@ -7,6 +7,7 @@ __pycache__
 inputs
 mihirb
 share
+eval.ipynb
 *.pdb
 outputs
 *.cif
