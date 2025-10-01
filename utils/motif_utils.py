@@ -6,6 +6,7 @@ from copy import deepcopy
 def get_motif_scaffold_templates(paths):
     
     specs = [load_motif_spec(path) for path in paths]
+    # print(specs[0])
     spec = merge_motif_specs(specs)			# merge all motifs into one spec for easy sampling
     masks = sample_motif_mask(spec)
     full_motif_mask = masks['sequence']	    # does not separate motifs, just boolean mask for scaffold/motif
