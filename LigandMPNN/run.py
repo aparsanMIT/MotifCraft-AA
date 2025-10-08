@@ -44,8 +44,9 @@ def main(args) -> None:
         os.makedirs(base_folder, exist_ok=True)
     if not os.path.exists(base_folder + "seqs"):
         os.makedirs(base_folder + "seqs", exist_ok=True)
-    if not os.path.exists(base_folder + "backbones"):
-        os.makedirs(base_folder + "backbones", exist_ok=True)
+    if not args.dont_write_backbones:
+        if not os.path.exists(base_folder + "backbones"):
+            os.makedirs(base_folder + "backbones", exist_ok=True)
     if args.save_stats:
         if not os.path.exists(base_folder + "stats"):
             os.makedirs(base_folder + "stats", exist_ok=True)
@@ -162,7 +163,7 @@ def main(args) -> None:
         if args.verbose:
             print("Designing protein from this path:", pdb)
         fixed_residues = fixed_residues_multi[pdb]
-        print("fixed_residues", fixed_residues)
+        # print("fixed_residues", fixed_residues)
         redesigned_residues = redesigned_residues_multi[pdb]
         protein_dict, backbone, other_atoms, icodes, _ = parse_PDB(
             pdb,
@@ -278,8 +279,8 @@ def main(args) -> None:
                 for item in range(protein_dict["chain_mask"].shape[0])
                 if protein_dict["chain_mask"][item] == 0
             ]
-            print("These residues will be redesigned: ", PDB_residues_to_be_redesigned)
-            print("These residues will be fixed: ", PDB_residues_to_be_fixed)
+            # print("These residues will be redesigned: ", PDB_residues_to_be_redesigned)
+            # print("These residues will be fixed: ", PDB_residues_to_be_fixed)
 
         # specify which residues are linked
         if args.symmetry_residues:
@@ -405,7 +406,7 @@ def main(args) -> None:
                         * feature_dict["chain_mask"]
                     )
                     active_sites = feature_dict["mask_XY"].cpu().numpy()[0]
-                    print(active_sites)
+                    # print(active_sites)
 
                     PDB_residues_active_sites = [
                         encoded_residue_dict_rev[item]
@@ -413,8 +414,8 @@ def main(args) -> None:
                         if active_sites[item] == 1
                     ]
 
-                    print("active sites", list(np.where(active_sites == 1)[0]))
-                    print("PDB_residues_active_sites", PDB_residues_active_sites)
+                    # print("active sites", list(np.where(active_sites == 1)[0]))
+                    # print("PDB_residues_active_sites", PDB_residues_active_sites)
                 else:
                     combined_mask = feature_dict["mask"] * feature_dict["chain_mask"]
                 loss_XY, _ = get_score(
@@ -500,38 +501,39 @@ def main(args) -> None:
                         [restype_int_to_str[AA] for AA in S_stack[ix].cpu().numpy()]
                     )
 
-                    # write new sequences into PDB with backbone coordinates
-                    seq_prody = np.array([restype_1to3[AA] for AA in list(seq)])[
-                        None,
-                    ].repeat(4, 1)
-                    bfactor_prody = (
-                        loss_per_residue_stack[ix].cpu().numpy()[None, :].repeat(4, 1)
-                    )
-                    backbone.setResnames(seq_prody)
-                    backbone.setBetas(
-                        np.exp(-bfactor_prody)
-                        * (bfactor_prody > 0.01).astype(np.float32)
-                    )
-                    if other_atoms:
-                        writePDB(
-                            output_backbones
-                            + name
-                            + "_"
-                            + str(ix_suffix)
-                            + args.file_ending
-                            + ".pdb",
-                            backbone + other_atoms,
+                    # optionally write redesigned sequence backbones
+                    if not args.dont_write_backbones:
+                        seq_prody = np.array([restype_1to3[AA] for AA in list(seq)])[
+                            None,
+                        ].repeat(4, 1)
+                        bfactor_prody = (
+                            loss_per_residue_stack[ix].cpu().numpy()[None, :].repeat(4, 1)
                         )
-                    else:
-                        writePDB(
-                            output_backbones
-                            + name
-                            + "_"
-                            + str(ix_suffix)
-                            + args.file_ending
-                            + ".pdb",
-                            backbone,
+                        backbone.setResnames(seq_prody)
+                        backbone.setBetas(
+                            np.exp(-bfactor_prody)
+                            * (bfactor_prody > 0.01).astype(np.float32)
                         )
+                        if other_atoms:
+                            writePDB(
+                                output_backbones
+                                + name
+                                + "_"
+                                + str(ix_suffix)
+                                + args.file_ending
+                                + ".pdb",
+                                backbone + other_atoms,
+                            )
+                        else:
+                            writePDB(
+                                output_backbones
+                                + name
+                                + "_"
+                                + str(ix_suffix)
+                                + args.file_ending
+                                + ".pdb",
+                                backbone,
+                            )
                     # write fasta lines
                     seq_np = np.array(list(seq))
                     seq_out_str = []
@@ -770,6 +772,9 @@ if __name__ == "__main__":
     )
     argparser.add_argument(
         "--save_stats", type=int, default=0, help="Save output statistics"
+    )
+    argparser.add_argument(
+        "--dont_write_backbones", type=int, default=1, help="Write redesigned backbone PDBs"
     )
 
     argparser.add_argument(

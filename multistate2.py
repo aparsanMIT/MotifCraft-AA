@@ -3,12 +3,14 @@ import torch
 import copy
 import numpy as np
 import pickle
+from typing import Optional
 from utils.mydesign_utils import get_batch, run_model, Annealer, get_mid_points, get_con_loss, norm_seq_grad
 import os
 
 torch.set_float32_matmul_precision("highest")
+#os.environ["HOME"] = "/data/cb/scratch/aparsan/BoltzDesign1"
 
-with open(os.path.expanduser(os.path.join(os.environ["HOME"], ".boltz/ccd.pkl")), "rb") as f:
+with open(os.path.expanduser(os.path.join(os.environ["HOME"], "boltz/ccd.pkl")), "rb") as f:
     CCD_LIB = pickle.load(f)
 
 
@@ -301,18 +303,19 @@ class MultistateDesigner:
         alphabet = list("XXARNDCQEGHILKMFPSTWYV-")
         return ''.join([alphabet[i.item()] for i in self.logits.argmax(-1)])
 
-    def get_final_structs(self, boltz_model):
+    def get_final_structs(self, boltz_model, samples: Optional[int] = 5, set_seq: Optional[str] = None):
         predict_args={
             "recycling_steps": 3,
             "sampling_steps": 200,
-            "diffusion_samples": 5,
+            "diffusion_samples": samples,
             "write_confidence_summary": True,
             "write_full_pae": True,
             "write_full_pde": True,
         }
         results = []
         for i, ligands in enumerate(self.ligands):
-            new_batch, new_struct = get_batch_with_ligands(self.get_seq(), ligands)
+            seq = self.get_seq() if set_seq is None else set_seq
+            new_batch, new_struct = get_batch_with_ligands(seq, ligands)
 
             output = run_model(boltz_model, new_batch, predict_args)
             coords_all = output["coords"]

@@ -83,13 +83,20 @@ def run(args):
             length=length,
             strength=args.strength,
         )
+
+        # get motif residues for ligandmpnn
+        motif_residues = None
+        try:
+            if hasattr(designer, "fixed_mask") and designer.fixed_mask is not None:
+                motif_indices = (designer.fixed_mask.nonzero(as_tuple=True)[0]).tolist()
+        except Exception:
+            motif_residues = None
         
         t0 = time.perf_counter()
         print("Optimizing sequence...")
         designer.optimize(boltz_model, verbose=args.verbose, debug=args.debug)
         t1 = time.perf_counter()
         print(f"Optimization done in {t1 - t0:.1f} sec")
-
         print("Saving structures...")
         t2 = time.perf_counter()
         structs = designer.get_final_structs(boltz_model)
@@ -114,7 +121,48 @@ def run(args):
                 with open(os.path.join(design_dir, base + ".cif"), "w") as f:
                     f.write(to_mmcif(struct))
                     
-        print(f"Finished design {args.motifs} {design+1} in {t3 - t0:.1f} sec total")
+
+        # LigandMPNN tied redesign 
+        t4 = time.perf_counter()
+        if getattr(args, "ligandmpnn_seqs", 0) and args.ligandmpnn_seqs > 0:
+            print("Redesigning sequences with LigandMPNN...")
+            from boltzdesign.tied_lmpnn import perform_tied_lmpnn_redesign
+            lmpnn_seqs, fasta_path, best_sample_idx_by_state = perform_tied_lmpnn_redesign(
+                design_dir=design_dir,
+                state_results=structs,
+                num_seqs=int(args.ligandmpnn_seqs),
+                motif_indices=motif_indices
+            )
+            t5 = time.perf_counter()
+            print(f"LigandMPNN redesign took {t5 - t4:.1f} sec")
+            print("Saving structures for LigandMPNN redesigns...")
+
+            # read LigandMPNN redesigns and regenerate final boltz structures
+            regen_dir = os.path.join(design_dir, "lmpnn", "boltz_regen")
+            os.makedirs(regen_dir, exist_ok=True)
+
+            # regenerate structures per sequence using designer.get_final_structs
+            for seq_idx, seq in enumerate(lmpnn_seqs):
+                #designer.get_seq = (lambda s=seq: s) # monkey patch - not the best way to do this
+                print("this is the ligandmpnn seq", seq)
+                regen_structs = designer.get_final_structs(boltz_model, samples = 1, set_seq = seq)
+
+                for output, struct_list, state_idx in regen_structs:
+                    with open(os.path.join(regen_dir, f"lmpnn_seq{seq_idx}_state{state_idx}.pkl"), "wb") as f:
+                        pickle.dump(output, f)
+
+                    for j, struct in enumerate(struct_list):
+                        base = f"lmpnn_seq{seq_idx}_state{state_idx}_sample{j}"
+                        with open(os.path.join(regen_dir, base + ".pdb"), "w") as f:
+                            f.write(to_pdb(struct))
+                        with open(os.path.join(regen_dir, base + ".cif"), "w") as f:
+                            f.write(to_mmcif(struct))
+
+            t6 = time.perf_counter()
+            print(f"Generating structures for LigandMPNN redesigns took {t6 - t5:.1f} sec")
+            print(f"Finished design {args.motifs} {design+1} in {t6 - t0:.1f} sec total")
+        else:
+            print(f"Finished design {args.motifs} {design+1} in {t3 - t0:.1f} sec total")
 
 
 if __name__ == "__main__":
@@ -133,6 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", default=1, type=int)
     parser.add_argument("--worker_id", default=0, type=int)
     parser.add_argument("--strength", default=0, type=float)
+    parser.add_argument("--ligandmpnn_seqs", default=0, type=int, help="If >0, run tied LigandMPNN once producing N sequences")
     args = parser.parse_args()
 
     
