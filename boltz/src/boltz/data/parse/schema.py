@@ -345,6 +345,7 @@ def parse_polymer(
     entity: str,
     chain_type: str,
     components: dict[str, Mol],
+    atomize_positions: Optional[set[int]] = None,
 ) -> Optional[ParsedChain]:
     """Process a sequence into a chain object.
 
@@ -374,6 +375,8 @@ def parse_polymer(
         If the alignment fails.
 
     """
+    if atomize_positions is None:
+        atomize_positions = set()
     ref_res = set(const.tokens)
     unk_chirality = const.chirality_type_ids[const.unk_chirality_type]
 
@@ -447,7 +450,7 @@ def parse_polymer(
                 idx=res_idx,
                 atom_center=atom_center,
                 atom_disto=atom_disto,
-                is_standard=True,
+                is_standard=(res_idx not in atomize_positions),
                 is_present=True,
                 orig_idx=None,
             )
@@ -615,12 +618,20 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 idx = mod["position"] - 1  # 1-indexed
                 seq[idx] = code
 
+            # Atomize selected positions (1-indexed in YAML -> 0-indexed set)
+            atomize_positions_yaml = items[0][entity_type].get("atomize_positions", [])
+            atomize_positions_set = {
+                int(p) - 1 for p in atomize_positions_yaml
+                if isinstance(p, (int, str)) and int(p) > 0
+            }
+
             # Parse a polymer
             parsed_chain = parse_polymer(
                 sequence=seq,
                 entity=entity_id,
                 chain_type=chain_type,
                 components=ccd,
+                atomize_positions=atomize_positions_set,
             )
 
         # Parse a non-polymer

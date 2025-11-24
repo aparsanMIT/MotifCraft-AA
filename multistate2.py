@@ -5,6 +5,8 @@ import numpy as np
 import pickle
 from typing import Optional
 from utils.mydesign_utils import get_batch, run_model, Annealer, get_mid_points, get_con_loss, norm_seq_grad
+from boltz.data import const
+from utils import residue_constants
 import os
 
 torch.set_float32_matmul_precision("highest")
@@ -18,7 +20,7 @@ def revcomp(seq: str) -> str:
     complement = str.maketrans("ACGT", "TGCA")
     return seq.upper().translate(complement)[::-1]
     
-def get_batch_with_ligands(seq, ligands=None, device="cuda"):
+def get_batch_with_ligands(seq, ligands=None, device="cuda", atomize_positions=None):
     data = {
         "version": 1,
         "sequences": [
@@ -31,6 +33,13 @@ def get_batch_with_ligands(seq, ligands=None, device="cuda"):
             },
         ],
     }
+
+    # add the residues we need to atomize in the schema 
+    if atomize_positions is not None:
+        data["sequences"][0]["protein"]["atomize_positions"] = [
+            int(pos) + 1 for pos in atomize_positions
+        ]
+    
     ALPHABET = "BCDEFGHIJKLMNOPQRSTUVWXYZ"
     for ligand in ligands:
         if ligand is not None:
@@ -163,6 +172,78 @@ class AntiMotifLoss:
     
         return -0.5*motif_mse_loss
 
+
+class AllAtomMotifLoss:
+    """
+    All-atom analogue of MotifLoss.
+
+    This loss assumes that the motif dictionary contains:
+      - 'atom_pos': np.ndarray of shape [N_atoms, 3]
+      - 'atom_dmat': np.ndarray of shape [N_atoms, N_atoms]
+      - 'atom_token_indices': a 1D sequence of length N_atoms giving the token
+        indices (in the Boltz distogram) corresponding to each motif atom.
+
+    Computing 'atom_token_indices' requires mapping atoms in the motif to
+    Boltz tokens and is expected to be provided upstream.
+    """
+
+    def __init__(self, motif, max_dist: float = 22.0):
+        # Store motif by reference and lazily initialize when atom_token_indices
+        # have been populated (after Boltz batches are built).
+        self.motif = motif
+        self.max_dist = max_dist
+
+        self._initialized = False
+        self.atom_dmat = None
+        self.atom_dmat_mask = None
+        self.atom_token_indices = None
+
+    def _ensure_initialized(self):
+        if self._initialized:
+            return
+
+        atom_dmat = self.motif.get("atom_dmat", None)
+        atom_token_indices = self.motif.get("atom_token_indices", None)
+
+        if atom_dmat is None or atom_token_indices is None:
+            raise ValueError(
+                "AllAtomMotifLoss requires motif['atom_dmat'] and motif['atom_token_indices'] "
+                "to be set before evaluation. Make sure atom_token_indices are "
+                "computed after building Boltz batches."
+            )
+
+        self.atom_dmat = atom_dmat.astype(np.float32)
+        self.atom_dmat_mask = (self.atom_dmat > 1e-3) & (self.atom_dmat < self.max_dist)
+        self.atom_token_indices = np.asarray(atom_token_indices, dtype=np.int64)
+        self._initialized = True
+
+    def evaluate(self, dict_out, device, opt=None):
+        # Lazily pull atom_dmat / atom_token_indices from the motif dict
+        self._ensure_initialized()
+        pdist = dict_out["pdistogram"]  # [B, L, L, num_bins]
+        print(pdist.shape)
+        print(self.atom_token_indices)
+        print(self.atom_dmat.shape)
+        print(self.atom_dmat_mask.shape)
+
+        idx = torch.as_tensor(self.atom_token_indices, dtype=torch.long, device=device)
+        # Subselect distogram to atom tokens: [B, N_atoms, N_atoms, num_bins]
+        pdist_atom = pdist[:, idx][:, :, idx]
+
+        mid_pts = get_mid_points(pdist_atom).to(device)  # [num_bins]
+
+        atom_dmat = torch.from_numpy(self.atom_dmat).to(device)  # [N_atoms, N_atoms]
+        atom_mask = torch.from_numpy(self.atom_dmat_mask).to(device)  # [N_atoms, N_atoms]
+
+        probs = pdist_atom.softmax(-1)
+        sq_err = (mid_pts - atom_dmat[..., None]) ** 2
+        atom_mse = (probs * sq_err).sum(-1)  # [B, N_atoms, N_atoms]
+
+        atom_mse = atom_mse * atom_mask
+        loss_per_batch = atom_mse.sum(dim=(-2, -1)) / (atom_mask.sum() + 1e-8)
+
+        return loss_per_batch.mean()
+
 class ContactLoss:
     def __init__(self):
         pass
@@ -275,9 +356,29 @@ class MultistateDesigner:
     def initialize(self, length, device='cuda'):
         self.device = device
         self.batches = []
+
+        # Decide which residues are motif (to be atomized) and what residue
+        # identities we intend at each position (from motif_seq).
+        atomize_positions = None
+        if self.motifs:
+            motif = self.motifs[0]
+            motif_mask = motif["motif_mask"]          # boolean array over length
+            atomize_positions = np.where(motif_mask)[0].tolist()  # 0-based indices
+
         for i, ligs in enumerate(self.ligands):
-            self.batches.append(get_batch_with_ligands('X'*length, ligs, device)[0])
+            batch, _ = get_batch_with_ligands(
+                'X' * length,
+                ligs,
+                device,
+                atomize_positions=atomize_positions,
+            )
+            self.batches.append(batch)
             self.add_loss(ContactLoss(), state=i)
+
+        # Once we know the motif layout and residue identities, assign
+        # motif['atom_token_indices'] using a simple offset-from-input rule.
+        if self.motifs:
+            self._assign_atom_token_indices(self.motifs[0])
         
         z = torch.distributions.Gumbel(0, 1).sample((length, 33)).to(device)
         z[...,:2] = z[...,22:] = -np.inf
@@ -298,6 +399,82 @@ class MultistateDesigner:
                 self.fixed_aa[motif_mask,:22] = motif_seq.to(device)[motif_mask].float()
 
         self.logits = torch.where(self.fixed_mask[...,None], self.fixed_aa, self.logits)
+
+    def _assign_atom_token_indices(self, motif):
+        """
+        Populate motif['atom_token_indices'] by mapping each motif atom
+        (given by motif['atom_res_index'], motif['atom_name']) to a token
+        index using a simple offset-from-input rule based on motif_seq and
+        const.ref_atoms.
+        """
+        atom_res_index = motif.get("atom_res_index", None)
+        atom_names = motif.get("atom_name", None)
+        motif_mask = motif.get("motif_mask", None)
+        motif_seq = motif.get("motif_seq", None)
+
+        if atom_res_index is None or atom_names is None or motif_mask is None or motif_seq is None:
+            raise ValueError(
+                "Motif must contain 'atom_res_index', 'atom_name', 'motif_mask', and 'motif_seq'."
+            )
+
+        atom_res_index = np.asarray(atom_res_index, dtype=np.int32)
+        atom_names = np.asarray(atom_names, dtype=object)
+        motif_mask = np.asarray(motif_mask, dtype=bool)
+
+        length = len(motif_seq)
+        if length != motif_mask.shape[0]:
+            raise ValueError("motif_seq and motif_mask must have the same length.")
+
+        # 1) Determine residue name (3-letter) at each position from motif_seq.
+        res3_by_pos = []
+        for i, aa in enumerate(motif_seq):
+            if aa == "X":
+                res3 = "UNK"
+            else:
+                # Map one-letter AA to 3-letter; fall back to UNK if needed.
+                res3 = residue_constants.restype_1to3.get(aa, "UNK")
+            if res3 not in const.ref_atoms:
+                raise ValueError(f"Residue {res3} at position {i} not in const.ref_atoms.")
+            res3_by_pos.append(res3)
+
+        # 2) Determine how many tokens each position contributes.
+        tokens_per_pos = []
+        for i in range(length):
+            if motif_mask[i]:
+                # Atomized: one token per atom in ref_atoms for this residue.
+                tokens_per_pos.append(len(const.ref_atoms[res3_by_pos[i]]))
+            else:
+                # Non-atomized protein residue: assume one token.
+                tokens_per_pos.append(1)
+
+        # 3) Prefix sum to get token offset for each position.
+        token_offset = [0] * length
+        running = 0
+        for i in range(length):
+            token_offset[i] = running
+            running += tokens_per_pos[i]
+
+        # 4) Map each motif atom to its token index.
+        atom_token_indices = []
+        for seq_idx, a_name in zip(atom_res_index, atom_names):
+            seq_idx = int(seq_idx)
+            a_name = str(a_name)
+            if not (0 <= seq_idx < length):
+                raise ValueError(f"Residue index {seq_idx} out of bounds for length {length}.")
+
+            res3 = res3_by_pos[seq_idx]
+            atom_list = const.ref_atoms[res3]
+            try:
+                local_atom_idx = atom_list.index(a_name)
+            except ValueError:
+                raise ValueError(
+                    f"Atom {a_name} not found in ref_atoms list for residue {res3}."
+                )
+
+            token_idx = token_offset[seq_idx] + local_atom_idx
+            atom_token_indices.append(token_idx)
+
+        motif["atom_token_indices"] = np.asarray(atom_token_indices, dtype=np.int64)
 
     def get_seq(self):
         alphabet = list("XXARNDCQEGHILKMFPSTWYV-")
@@ -429,7 +606,7 @@ class MultistateDesigner:
             hard=0,
             e_hard=0,
             e_num_optimizing_binder_pos=8,
-            iters=100,
+            iters=3, # 100
         ):
             self.do_iter(boltz_model, opt, verbose=verbose)
 
@@ -442,7 +619,7 @@ class MultistateDesigner:
             e_hard=0,
             num_optimizing_binder_pos=8,
             e_num_optimizing_binder_pos=12,
-            iters=100,
+            iters=3, # 100
         ):
             self.do_iter(boltz_model, opt, verbose=verbose)
         
@@ -452,6 +629,6 @@ class MultistateDesigner:
             e_temp=0.01,
             num_optimizing_binder_pos=12,
             e_num_optimizing_binder_pos=16,
-            iters=10,
+            iters=2, # 10
         ):
             self.do_iter(boltz_model, opt, verbose=verbose)
