@@ -1,7 +1,7 @@
 import numpy as np
 from . import protein, residue_constants
 from copy import deepcopy
-
+from boltz.data import const  
 
 def get_motif_scaffold_templates(paths):
     
@@ -21,20 +21,83 @@ def get_motif_scaffold_templates(paths):
         motif_mask = motif_groups == motif_idx
         with open(path) as f:
             prot = protein.from_pdb_string(f.read())
+
+        # Residue-level  representation used by the original motif loss
+        cb_pos = np.zeros((len(motif_mask), 3), dtype=np.float32)
+        cb_pos[motif_mask] = prot.atom_positions[:, 2]	# glycine Cβs are infilled by featurizer
+
+        seq = ['X'] * len(motif_mask)
+        motif_positions = motif_mask.nonzero()[0]
+        for design_idx, aatype in zip(motif_positions, prot.aatype):
+            seq[design_idx] = residue_constants.restypes[aatype]
+
+        # all-atom rep for motif residues
+        atom_pos = []
+        atom_res_index = []
+        atom_name = []
+
+        # prot.aatype and prot.atom_positions are ordered only over motif residues.
+        # We map them back onto design indices via motif_positions.
+        for local_res_idx, (design_idx, aatype) in enumerate(
+            zip(motif_positions, prot.aatype)
+        ):
+            restype_1 = residue_constants.restypes[aatype]
+            restype_3 = residue_constants.restype_1to3[restype_1]
+            # Use Boltz ref_atoms so motif atoms align with atomized residues
+            if restype_3 not in const.ref_atoms:
+                continue
+
+            for a_name in const.ref_atoms[restype_3]:
+                # Map atom name to canonical atom index in OpenFold ordering
+                atom_idx = residue_constants.atom_order.get(a_name)
+                if atom_idx is None:
+                    continue
+
+                coord = prot.atom_positions[local_res_idx, atom_idx]
+                # Skip atoms with no coordinates (all zeros)
+                if np.allclose(coord, 0.0):
+                    continue
+                
+                atom_pos.append(coord)
+                atom_res_index.append(design_idx)
+                atom_name.append(a_name)
+
+        atom_pos = np.asarray(atom_pos, dtype=np.float32)
+        atom_res_index = np.asarray(atom_res_index, dtype=np.int32)
+        atom_name = np.asarray(atom_name, dtype=object)
+
+        # Precompute all-atom distance matrix for motif atoms (used by all-atom motif losses)
+        if atom_pos.size > 0:
+            atom_dmat = np.linalg.norm(
+                atom_pos[None, ...] - atom_pos[:, None, :],
+                axis=-1,
+            ).astype(np.float32)
+        else:
+            atom_dmat = np.zeros((0, 0), dtype=np.float32)
+
+        motif_templates.append(
+            {
+                'full_motif_mask': full_motif_mask,  # saving for now
+                'motif_mask': motif_mask,
+                'cb_pos': cb_pos,
+                'motif_seq': ''.join(seq),
+                # All-atom motif description (used for all-atom motif losses)
+                'atom_pos': atom_pos,
+                'atom_res_index': atom_res_index,
+                'atom_name': atom_name,
+                'atom_dmat': atom_dmat,
+            }
+        )
+
+        print("shape of atom_pos", motif_templates[i]['atom_pos'].shape)
+        print("atom_res_index of first 50 atoms", motif_templates[i]['atom_res_index'][:50])
+        print("atom_res_index of last 50 atoms", motif_templates[i]['atom_res_index'][-50:])
+        print("atom_name of first 50 atoms", motif_templates[i]['atom_name'][:50])
+        print("atom_name of last 50 atoms", motif_templates[i]['atom_name'][-50:])
+        print("shape of atom_dmat", motif_templates[i]['atom_dmat'].shape)
         
-        cb_pos = np.zeros((len(motif_mask), 3))
-        cb_pos[motif_mask] = prot.atom_positions[:,2]	# glycine cbs are infilled by featurizer
-        seq = ['X']*len(motif_mask)
-        for idx, aatype in zip(motif_mask.nonzero()[0], prot.aatype):
-            seq[idx] = residue_constants.restypes[aatype]
-            
-        motif_templates.append({
-        'full_motif_mask':full_motif_mask,  # saving for now
-        'motif_mask': motif_mask,
-        'cb_pos': cb_pos,
-        'motif_seq': ''.join(seq)
-        })
     # breakpoint()
+    
     return motif_templates
         
 

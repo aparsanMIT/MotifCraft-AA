@@ -72,8 +72,10 @@ def run(args):
         # ligand = 'Fc1c(Cl)ccc(n2cnnn2)c1c1c[n+]([O-])c(cc1)C(CC1CC1)n1cc(cn1)c1ccc(N)nc1C'
         
         if args.motifs:
-            motif_templates = motif_utils.get_motif_scaffold_templates([f"motifs/{m}.pdb" for m in args.motifs])
-            length=len(motif_templates[0]['motif_mask'])
+            motif_templates = motif_utils.get_motif_scaffold_templates(
+                [f"motifs/{m}.pdb" for m in args.motifs]
+            )
+            length = len(motif_templates[0]["motif_mask"])
         else:
             motif_templates = []
             length = args.length
@@ -106,9 +108,17 @@ def run(args):
         design_dir = os.path.join(out_dir, f"design{design}")
         os.makedirs(design_dir, exist_ok=True)
         if args.motifs:
-            for i, motif in enumerate(args.motifs):
-                with open(os.path.join(design_dir,f"{motif}_spec.pkl"), "wb") as f:    # also save motifspec for eval
+            for i, motif_name in enumerate(args.motifs):
+                # Save the sampled motif spec (mask, atom_dmat, etc.) for eval
+                with open(os.path.join(design_dir, f"{motif_name}_spec.pkl"), "wb") as f:
                     pickle.dump(motif_templates[i], f)
+
+                # Also save the sampled motif as a PDB so we can inspect the
+                # exact motif configuration used in this design.
+                motif_mask = motif_templates[i]["motif_mask"]
+                spec_path = os.path.join("motifs", f"{motif_name}.pdb")
+                pdb_out = os.path.join(design_dir, f"{motif_name}_sampled_motif.pdb")
+                motif_utils.save_motif_pdb(spec_path, motif_mask, pdb_out)
             
         for output, struct_list, state_idx in structs:
             with open(os.path.join(design_dir, f"state{state_idx}.pkl"), "wb") as f:

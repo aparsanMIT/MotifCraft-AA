@@ -47,6 +47,42 @@ def onemotif_twostates_pos(motifs, ligands, length, strength = None):
     
     return designer
 
+
+@task("motif_only")
+def motif_only(motifs, ligands, length, strength=None):
+    """
+    Single-state design task using only residue-level motif loss.
+
+    No ligand terms, no contact loss, no anti-motif; gradients come purely
+    from MotifLoss on the Cβ–Cβ motif distance matrix.
+    """
+    designer = MultistateDesigner(num_states=1)
+    designer.add_loss(MotifLoss(motifs[0]), state=0)
+    designer.add_motif(motifs[0])
+    designer.initialize(length=length)
+
+    return designer
+
+
+@task("motif_only_allatom")
+def motif_only_allatom(motifs, ligands, length, strength=None):
+    """
+    Single-state design task using only all-atom motif loss.
+
+    This expects each motif dict to contain:
+      - 'atom_dmat': all-atom distance matrix [N_atoms, N_atoms]
+      - 'atom_token_indices': token indices for those atoms in the Boltz distogram.
+    """
+    designer = MultistateDesigner(num_states=1)
+    designer.add_loss(AllAtomMotifLoss(motifs[0]), state=0)
+    designer.add_motif(motifs[0])
+    # Enable atomization only for the all-atom motif loss task so other
+    # tasks retain their original residue-level behavior.
+    designer.initialize(length=length, atomize_motif=True)
+
+
+    return designer
+
 @task('twoligands')
 def twoligands(motifs, ligands, length, strength=10):
     assert not motifs
