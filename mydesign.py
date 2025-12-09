@@ -11,10 +11,11 @@ import time
 import os
 import argparse
 from utils import motif_utils
+import torch
 
 device = "cuda"
 
-def _init_boltz():
+def _init_boltz(fine_tuned=False):
     predict_args={
         "recycling_steps": args.recycles,
         "sampling_steps": 200,
@@ -36,6 +37,10 @@ def _init_boltz():
         no_msa=False,
         no_atom_encoder=False,
     ).eval().requires_grad_(False)
+
+    if fine_tuned:
+        ft = torch.load("boltz/step=1000.ckpt", map_location="cuda", weights_only=False)
+        boltz_model.load_state_dict(ft["state_dict"], strict=False)
     
     return boltz_model
 
@@ -63,7 +68,7 @@ def run(args):
     for design in range(args.worker_id, args.num_designs, args.num_workers):
         print(f"\nStarting  {args.task} design {design+1}/{args.num_designs} for motifs {args.motifs} and ligands {ligands}")
         
-        boltz_model = _init_boltz()
+        boltz_model = _init_boltz(args.fine_tuned)
         
         # init task
         # motif = get_motif(f'motifs/{args.motif}.pdb')
@@ -96,7 +101,7 @@ def run(args):
         
         t0 = time.perf_counter()
         print("Optimizing sequence...")
-        designer.optimize(boltz_model, verbose=args.verbose, debug=args.debug)
+        designer.optimize(boltz_model, verbose=args.verbose, debug=args.debug, best_by_loss=args.best_by_loss)
         t1 = time.perf_counter()
         print(f"Optimization done in {t1 - t0:.1f} sec")
         print("Saving structures...")
@@ -192,6 +197,8 @@ if __name__ == "__main__":
     parser.add_argument("--worker_id", default=0, type=int)
     parser.add_argument("--strength", default=0, type=float)
     parser.add_argument("--ligandmpnn_seqs", default=0, type=int, help="If >0, run tied LigandMPNN once producing N sequences")
+    parser.add_argument("--best_by_loss", action='store_true', help="Save the structure with the lowest loss instead of the last iteration")
+    parser.add_argument("--fine_tuned", action='store_true', help="Use the fine-tuned model")
     args = parser.parse_args()
 
     

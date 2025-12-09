@@ -447,7 +447,7 @@ class MultistateDesigner:
             self.batches.append(batch)
             self.structures.append(structure)
             if atomize_motif and self.motifs:
-                self.add_loss(FilteredContactLoss(self.motifs[0]), state=i)
+                #self.add_loss(FilteredContactLoss(self.motifs[0]), state=i)
                 self.add_loss(ContactLoss(), state=i)
             else:
                 self.add_loss(ContactLoss(), state=i)
@@ -649,11 +649,24 @@ class MultistateDesigner:
         
             self.logits -= opt["lr_rate"] * self.logits.grad
         self.logits.grad = None
+
+        return loss.item()
         
-    def optimize(self, boltz_model, verbose=False, debug=False):
-        
+    def optimize(self, boltz_model, verbose=False, debug=False, best_by_loss=False):
+
+        best_loss = float('inf')
+        best_logits = None
+
+        def update_best(loss):
+            nonlocal best_loss, best_logits
+            if loss < best_loss:
+                best_loss = loss
+                best_logits = self.logits.clone().detach()
+
         for opt in Annealer(hard=0, e_hard=0, iters=30, lr=0.2):
-            self.do_iter(boltz_model, opt, pre_run=True, verbose=verbose)
+            loss_val = self.do_iter(boltz_model, opt, pre_run=True, verbose=verbose)
+            if best_by_loss:
+                update_best(loss_val)
         if debug: return
         
         with torch.no_grad():
@@ -661,14 +674,16 @@ class MultistateDesigner:
         
         
         for opt in Annealer(
-            soft=0, 
+            soft=0,
             e_soft=1,
             hard=0,
             e_hard=0,
             e_num_optimizing_binder_pos=8,
             iters=100, # 100
         ):
-            self.do_iter(boltz_model, opt, verbose=verbose)
+            loss_val = self.do_iter(boltz_model, opt, verbose=verbose)
+            if best_by_loss:
+                update_best(loss_val)
 
         with torch.no_grad():
             self.logits = 2 * self.logits
@@ -681,7 +696,9 @@ class MultistateDesigner:
             e_num_optimizing_binder_pos=12,
             iters=100, # 100
         ):
-            self.do_iter(boltz_model, opt, verbose=verbose)
+            loss_val = self.do_iter(boltz_model, opt, verbose=verbose)
+            if best_by_loss:
+                update_best(loss_val)
         
         
         for opt in Annealer(
@@ -691,4 +708,9 @@ class MultistateDesigner:
             e_num_optimizing_binder_pos=16,
             iters=2, # 10
         ):
-            self.do_iter(boltz_model, opt, verbose=verbose)
+            loss_val = self.do_iter(boltz_model, opt, verbose=verbose)
+            if best_by_loss:
+                update_best(loss_val)
+
+        if best_by_loss and best_logits is not None:
+            self.logits = best_logits
