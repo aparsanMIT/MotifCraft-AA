@@ -667,7 +667,7 @@ def boltz_hallucination(
             .to(device)
             - torch.sum(
                 torch.eye(batch["res_type"].shape[-1])[
-                    [0, 1, 6, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+                    [0, 1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
                 ],
                 dim=0,
             ).to(device)

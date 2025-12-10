@@ -574,7 +574,7 @@ class MultistateDesigner:
         logits = alpha * res_type_logits
         X = logits - torch.sum(
             torch.eye(logits.shape[-1])[
-                [0, 1, 6, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+                [0, 1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
             ],
             dim=0,
         ).to(device) * (1e10)
@@ -640,7 +640,7 @@ class MultistateDesigner:
         with torch.no_grad():
             self.logits.grad[self.fixed_mask] = 0
             self.logits.grad[
-                ..., [0, 1, 6, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+                ..., [0, 1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
             ] = 0
             self.logits.grad = norm_seq_grad(
                 self.logits.grad[None], 
