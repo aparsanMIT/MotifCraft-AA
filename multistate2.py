@@ -460,8 +460,8 @@ class MultistateDesigner:
             self.batches.append(batch)
             self.structures.append(structure)
             if atomize_motif and self.motifs:
-                #self.add_loss(FilteredContactLoss(self.motifs[0]), state=i)
-                self.add_loss(ContactLoss(), state=i)
+                self.add_loss(FilteredContactLoss(self.motifs[0]), state=i)
+                #self.add_loss(ContactLoss(), state=i)
             else:
                 self.add_loss(ContactLoss(), state=i)
 
