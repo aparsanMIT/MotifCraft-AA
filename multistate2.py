@@ -267,9 +267,12 @@ class ContactLoss:
 
 class FilteredContactLoss(ContactLoss):
     """
-    Contact loss variant that ignores motif atoms which were atomized
-    into per-atom tokens. It relies on motif['atom_token_indices']
-    being populated (same data required by AllAtomMotifLoss).
+    Contact loss variant that treats atomized residues as single units by using
+    only their CB (or CA for GLY) token. This ensures atomized residues participate
+    in contact loss the same way as non-atomized residues (one token per residue).
+    
+    Requires motif['atom_token_indices'] and motif['residue_cb_token_indices']
+    to be populated (computed by _assign_atom_token_indices).
     """
 
     def __init__(self, motif):
@@ -278,17 +281,27 @@ class FilteredContactLoss(ContactLoss):
 
     def evaluate(self, dict_out, device, opt=None):
         atom_token_indices = self.motif.get("atom_token_indices")
-        if atom_token_indices is None:
+        cb_token_indices = self.motif.get("residue_cb_token_indices")
+        
+        if atom_token_indices is None or cb_token_indices is None:
             raise ValueError(
-                "FilteredContactLoss requires motif['atom_token_indices'] "
-                "to mask out atomized tokens."
+                "FilteredContactLoss requires motif['atom_token_indices'] and "
+                "motif['residue_cb_token_indices'] to be set."
             )
 
         chain_mask = dict_out["mol_type"] == 0
         filtered_mask = chain_mask.clone()
-        idx = torch.as_tensor(atom_token_indices, dtype=torch.long, device=device)
-        idx = idx[(idx >= 0) & (idx < filtered_mask.shape[-1])]
-        filtered_mask[..., idx] = False
+        
+        # Step 1: Mask out ALL atomized tokens
+        atom_idx = torch.as_tensor(atom_token_indices, dtype=torch.long, device=device)
+        atom_idx = atom_idx[(atom_idx >= 0) & (atom_idx < filtered_mask.shape[-1])]
+        filtered_mask[..., atom_idx] = False
+        
+        # Step 2: Re-include CB tokens for atomized residues
+        # This treats each atomized residue as a single unit (its CB atom)
+        cb_idx = torch.as_tensor(cb_token_indices, dtype=torch.long, device=device)
+        cb_idx = cb_idx[(cb_idx >= 0) & (cb_idx < filtered_mask.shape[-1])]
+        filtered_mask[..., cb_idx] = True
 
         pdist = dict_out["pdistogram"]
         mid_pts = get_mid_points(pdist).to(device)
@@ -535,6 +548,39 @@ class MultistateDesigner:
         print("shape of atom_token_indices", motif["atom_token_indices"].shape)
         print("atom_token_indices of first 50 atoms", motif["atom_token_indices"][:50])
         print("atom_token_indices of last 50 atoms", motif["atom_token_indices"][-50:])
+
+        # Also compute CB (or CA for GLY) token indices - one per atomized residue.
+        # This is used by FilteredContactLoss to treat atomized residues as single units.
+        residue_cb_token_indices = []
+        unique_res_indices = sorted(set(int(x) for x in atom_res_index))
+        
+        for res_idx in unique_res_indices:
+            # Get the residue name from structure
+            if res_idx not in res_by_seq_idx:
+                continue
+            atom_start, atom_num, res_name = res_by_seq_idx[res_idx]
+            
+            # Determine the distogram atom (CB for most, CA for GLY)
+            disto_atom = const.res_to_disto_atom.get(res_name, "CB")
+            
+            try:
+                local_atom_idx = const.ref_atoms[res_name].index(disto_atom)
+            except ValueError:
+                # Fallback to CA if CB not found
+                local_atom_idx = const.ref_atoms[res_name].index("CA")
+            
+            if local_atom_idx >= atom_num:
+                continue
+                
+            global_atom_idx = atom_start + local_atom_idx
+            token_vec = atom_to_token[global_atom_idx]
+            nonzero = (token_vec > 0).nonzero(as_tuple=True)[0]
+            if nonzero.numel() > 0:
+                residue_cb_token_indices.append(int(nonzero[0].item()))
+        
+        motif["residue_cb_token_indices"] = np.asarray(residue_cb_token_indices, dtype=np.int64)
+        print("shape of residue_cb_token_indices", motif["residue_cb_token_indices"].shape)
+        print("residue_cb_token_indices", motif["residue_cb_token_indices"])
 
     def get_seq(self):
         alphabet = list("XXARNDCQEGHILKMFPSTWYV-")
