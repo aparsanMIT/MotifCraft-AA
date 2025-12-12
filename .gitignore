@@ -16,3 +16,5 @@ out/
 setup_mihir.sh
 plots/
 eval_mihir.ipynb
+results/
+logs/
