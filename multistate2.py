@@ -3,6 +3,7 @@ import torch
 import copy
 import numpy as np
 import pickle
+import csv
 from typing import Optional
 from utils.mydesign_utils import get_batch, run_model, Annealer, get_mid_points, get_con_loss, norm_seq_grad
 from boltz.data import const
@@ -410,6 +411,8 @@ class MultistateDesigner:
         self.device = device
         self.batches = []
         self.structures = []
+        self.token_to_residue_maps = []  # NEW: store token->residue mapping for each batch
+        self.atomize_motif = atomize_motif  # NEW: remember if atomization is enabled
         alphabet = list("XXARNDCQEGHILKMFPSTWYV-")
 
         z = torch.distributions.Gumbel(0, 1).sample((length, 33)).to(device)
@@ -459,15 +462,85 @@ class MultistateDesigner:
             )
             self.batches.append(batch)
             self.structures.append(structure)
+            
+            # NEW: Build token-to-residue mapping for this batch
             if atomize_motif and self.motifs:
+                token_to_res = self._build_token_to_residue_map(structure, batch, length, device)
+                self.token_to_residue_maps.append(token_to_res)
                 self.add_loss(FilteredContactLoss(self.motifs[0]), state=i)
-                #self.add_loss(ContactLoss(), state=i)
             else:
+                self.token_to_residue_maps.append(None)
                 self.add_loss(ContactLoss(), state=i)
 
         # Only map motif atoms to distogram tokens when using all-atom motif loss.
         if atomize_motif and self.motifs:
             self._assign_atom_token_indices(self.motifs[0], self.structures[0], self.batches[0])
+
+    def _build_token_to_residue_map(self, structure, batch, length, device):
+        """
+        Build a mapping from token index to residue index for atomized batches.
+        
+        When atomization is enabled, some residues contribute multiple tokens
+        (one per atom). This function returns a tensor where:
+            token_to_residue[token_idx] = residue_idx
+        
+        This allows us to correctly assign res_type to each token based on
+        which residue it belongs to.
+        """
+        atom_to_token = batch["atom_to_token"][0]  # [num_atoms, num_tokens]
+        num_tokens = atom_to_token.shape[1]
+        
+        # Initialize with -1 (will be filled in)
+        token_to_residue = torch.full((num_tokens,), -1, dtype=torch.long, device=device)
+        
+        # Get chain A info (the designed protein chain)
+        chains = structure.chains
+        chain_A_idx = None
+        for i, chain in enumerate(chains):
+            if chain["name"] == "A":
+                chain_A_idx = i
+                break
+        
+        if chain_A_idx is None:
+            # Fallback: assume 1:1 mapping if no chain A found
+            for i in range(min(num_tokens, length)):
+                token_to_residue[i] = i
+            return token_to_residue
+        
+        res_start = chains[chain_A_idx]["res_idx"]
+        res_num = chains[chain_A_idx]["res_num"]
+        res_end = res_start + res_num
+        residues = structure.residues[res_start:res_end]
+        
+        # For each residue, find which tokens it maps to
+        for res in residues:
+            seq_idx = int(res["res_idx"])  # This is the residue's position in the sequence (0-indexed)
+            atom_start = int(res["atom_idx"])
+            atom_num = int(res["atom_num"])
+            
+            if seq_idx >= length:
+                continue
+            
+            # For each atom in this residue, find its token
+            for local_atom_idx in range(atom_num):
+                global_atom_idx = atom_start + local_atom_idx
+                if global_atom_idx >= atom_to_token.shape[0]:
+                    continue
+                
+                # Find which token this atom contributes to
+                token_vec = atom_to_token[global_atom_idx]  # [num_tokens]
+                nonzero = (token_vec > 0).nonzero(as_tuple=True)[0]
+                
+                for token_idx in nonzero:
+                    token_idx = int(token_idx.item())
+                    if token_idx < num_tokens:
+                        token_to_residue[token_idx] = seq_idx
+        
+        # Debug: print mapping stats
+        assigned = (token_to_residue >= 0).sum().item()
+        print(f"[token_to_residue] {assigned}/{num_tokens} tokens mapped to residues")
+        
+        return token_to_residue
 
     def _assign_atom_token_indices(self, motif, structure, batch):
         """
@@ -643,11 +716,39 @@ class MultistateDesigner:
         loss_dict = []
 
         boltz_out = []
-        for batch in self.batches:
-            batch['res_type'] = torch.cat([
-                restype[None],
-                batch['res_type'][:,len(restype):].detach()
-            ], 1)
+        for batch_idx, batch in enumerate(self.batches):
+            token_to_res = self.token_to_residue_maps[batch_idx]
+            
+            if token_to_res is not None:
+                # Atomized batch: use token-to-residue mapping to correctly assign res_type
+                # Use advanced indexing to properly propagate gradients through restype
+                num_tokens = batch['res_type'].shape[1]
+                
+                # Start with detached base (no gradient history from previous iterations)
+                base_res_type = batch['res_type'].detach().clone()
+                
+                # Build new_res_type using indexing (gradient-friendly)
+                # For valid tokens, gather from restype; for invalid, keep base values
+                valid_mask = (token_to_res >= 0) & (token_to_res < len(restype))
+                
+                # Clamp indices to valid range for gathering (invalid ones will be masked out)
+                safe_indices = token_to_res.clamp(0, len(restype) - 1)
+                
+                # Gather restype values for each token based on its residue
+                gathered = restype[safe_indices]  # [num_tokens, 33]
+                
+                # Combine: use gathered values where valid, base values elsewhere
+                valid_mask_expanded = valid_mask.unsqueeze(-1)  # [num_tokens, 1]
+                new_res_type = torch.where(valid_mask_expanded, gathered, base_res_type[0])
+                
+                batch['res_type'] = new_res_type.unsqueeze(0)  # [1, num_tokens, 33]
+            else:
+                # Non-atomized batch: original 1:1 token-to-residue mapping
+                batch['res_type'] = torch.cat([
+                    restype[None],
+                    batch['res_type'][:,len(restype):].detach()
+                ], 1)
+            
             batch["msa"] = batch["res_type"].unsqueeze(0).detach()
             batch["profile"] = batch["msa"].float().mean(dim=0).detach()
 
@@ -661,13 +762,13 @@ class MultistateDesigner:
             else:
                 readout = boltz_out[state]
             this_loss = loss.evaluate(readout, boltz_model.device, opt)
-            loss_dict.append((type(loss), state, this_loss.item()))
+            loss_dict.append((type(loss).__name__, state, this_loss.item()))
             total_loss = total_loss + this_loss
 
         if verbose:
             print(loss_dict)
             print(self.get_seq())
-        return total_loss
+        return total_loss, loss_dict
         
             
     def do_iter(self, boltz_model, opt, pre_run=False, verbose=False):
@@ -676,7 +777,7 @@ class MultistateDesigner:
         restype = self.get_restype_from_logits(self.logits, opt)
         restype = torch.where(self.fixed_mask[...,None].clone(), self.fixed_aa.clone(), restype.clone())
        
-        loss = self.get_loss(restype, boltz_model, opt, verbose=verbose)
+        loss, loss_dict = self.get_loss(restype, boltz_model, opt, verbose=verbose)
         # loss = restype.sum()
     
         loss.backward()
@@ -696,12 +797,15 @@ class MultistateDesigner:
             self.logits -= opt["lr_rate"] * self.logits.grad
         self.logits.grad = None
 
-        return loss.item()
+        return loss.item(), loss_dict
         
-    def optimize(self, boltz_model, verbose=False, debug=False, best_by_loss=False):
+    def optimize(self, boltz_model, verbose=False, debug=False, best_by_loss=False, trajectory_path=None):
 
         best_loss = float('inf')
         best_logits = None
+        iteration = 0
+        trajectory_data = []
+        loss_term_names = None  # Will be set on first iteration
 
         def update_best(loss):
             nonlocal best_loss, best_logits
@@ -709,8 +813,30 @@ class MultistateDesigner:
                 best_loss = loss
                 best_logits = self.logits.clone().detach()
 
+        def record_trajectory(loss_val, loss_dict, phase):
+            nonlocal iteration, loss_term_names
+            
+            # Build loss term names from first loss_dict if not set
+            if loss_term_names is None and loss_dict:
+                loss_term_names = [f"{name}_state{state}" for name, state, _ in loss_dict]
+            
+            row = {
+                'iteration': iteration,
+                'phase': phase,
+                'sequence': self.get_seq(),
+                'loss': loss_val
+            }
+            # Add individual loss terms
+            for name, state, value in loss_dict:
+                row[f"{name}_state{state}"] = value
+            
+            trajectory_data.append(row)
+            iteration += 1
+
         for opt in Annealer(hard=0, e_hard=0, iters=30, lr=0.2):
-            loss_val = self.do_iter(boltz_model, opt, pre_run=True, verbose=verbose)
+            loss_val, loss_dict = self.do_iter(boltz_model, opt, pre_run=True, verbose=verbose)
+            if trajectory_path:
+                record_trajectory(loss_val, loss_dict, 'pre_run')
             if best_by_loss:
                 update_best(loss_val)
         if debug: return
@@ -727,7 +853,9 @@ class MultistateDesigner:
             e_num_optimizing_binder_pos=8,
             iters=100, # 100
         ):
-            loss_val = self.do_iter(boltz_model, opt, verbose=verbose)
+            loss_val, loss_dict = self.do_iter(boltz_model, opt, verbose=verbose)
+            if trajectory_path:
+                record_trajectory(loss_val, loss_dict, 'soft_anneal')
             if best_by_loss:
                 update_best(loss_val)
 
@@ -742,7 +870,9 @@ class MultistateDesigner:
             e_num_optimizing_binder_pos=12,
             iters=100, # 100
         ):
-            loss_val = self.do_iter(boltz_model, opt, verbose=verbose)
+            loss_val, loss_dict = self.do_iter(boltz_model, opt, verbose=verbose)
+            if trajectory_path:
+                record_trajectory(loss_val, loss_dict, 'temp_anneal')
             if best_by_loss:
                 update_best(loss_val)
         
@@ -754,9 +884,23 @@ class MultistateDesigner:
             e_num_optimizing_binder_pos=16,
             iters=2, # 10
         ):
-            loss_val = self.do_iter(boltz_model, opt, verbose=verbose)
+            loss_val, loss_dict = self.do_iter(boltz_model, opt, verbose=verbose)
+            if trajectory_path:
+                record_trajectory(loss_val, loss_dict, 'final')
             if best_by_loss:
                 update_best(loss_val)
 
         if best_by_loss and best_logits is not None:
             self.logits = best_logits
+
+        # Save trajectory CSV if path provided
+        if trajectory_path and trajectory_data:
+            # Build fieldnames dynamically based on loss terms
+            fieldnames = ['iteration', 'phase', 'sequence', 'loss']
+            if loss_term_names:
+                fieldnames.extend(loss_term_names)
+            
+            with open(trajectory_path, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(trajectory_data)

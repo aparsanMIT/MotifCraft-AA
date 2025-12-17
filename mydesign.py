@@ -99,19 +99,25 @@ def run(args):
         except Exception:
             motif_residues = None
         
+        design_dir = os.path.join(out_dir, f"design{design}")
+        os.makedirs(design_dir, exist_ok=True)
+        
+        # Set trajectory path if saving is enabled
+        trajectory_path = os.path.join(design_dir, "trajectory.csv") if args.save_trajectory else None
+        
         t0 = time.perf_counter()
         print("Optimizing sequence...")
-        designer.optimize(boltz_model, verbose=args.verbose, debug=args.debug, best_by_loss=args.best_by_loss)
+        designer.optimize(boltz_model, verbose=args.verbose, debug=args.debug, best_by_loss=args.best_by_loss, trajectory_path=trajectory_path)
         t1 = time.perf_counter()
         print(f"Optimization done in {t1 - t0:.1f} sec")
+        if trajectory_path:
+            print(f"Trajectory saved to {trajectory_path}")
         print("Saving structures...")
         t2 = time.perf_counter()
         structs = designer.get_final_structs(boltz_model)
         t3 = time.perf_counter()
         print(f"Structure generation took {t3 - t2:.1f} sec")
         
-        design_dir = os.path.join(out_dir, f"design{design}")
-        os.makedirs(design_dir, exist_ok=True)
         if args.motifs:
             for i, motif_name in enumerate(args.motifs):
                 # Save the sampled motif spec (mask, atom_dmat, etc.) for eval
@@ -199,6 +205,7 @@ if __name__ == "__main__":
     parser.add_argument("--ligandmpnn_seqs", default=0, type=int, help="If >0, run tied LigandMPNN once producing N sequences")
     parser.add_argument("--best_by_loss", action='store_true', help="Save the structure with the lowest loss instead of the last iteration")
     parser.add_argument("--fine_tuned", action='store_true', help="Use the fine-tuned model")
+    parser.add_argument("--save_trajectory", action='store_true', help="Save trajectory CSV with sequence and loss at each iteration")
     args = parser.parse_args()
 
     
